@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "v_PVMismatch"
+version = "0.1.4"
+authors = [
+  { name="Kiran Balasubramanian", email="kiran.balasubramanian@maxeon.com" },
+]
+maintainers = [
+  {name = "Kiran Balasubramanian", email = "kiran.balasubramanian@maxeon.com"},
+]
+description = "Vectorized PVMismatch (v_PVMismatch) Package."
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+  "matplotlib",
+  "future",
+  "numpy",
+  "scipy",
+]
+keywords = ["pvmismatch", "PV", "shading", "mismatch", "IV"]
+
+[project.urls]
+Homepage = "https://github.com/Maxeon-RnD/v_pvmismatch"
+Issues = "https://github.com/Maxeon-RnD/v_pvmismatch/issues"

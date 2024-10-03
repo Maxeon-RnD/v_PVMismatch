@@ -1,0 +1,43 @@
+Metadata-Version: 2.1
+Name: v_PVMismatch
+Version: 0.1.4
+Summary: Vectorized PVMismatch (v_PVMismatch) Package.
+Author-email: Kiran Balasubramanian <kiran.balasubramanian@maxeon.com>
+Maintainer-email: Kiran Balasubramanian <kiran.balasubramanian@maxeon.com>
+Project-URL: Homepage, https://github.com/Maxeon-RnD/v_pvmismatch
+Project-URL: Issues, https://github.com/Maxeon-RnD/v_pvmismatch/issues
+Keywords: pvmismatch,PV,shading,mismatch,IV
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: matplotlib
+Requires-Dist: future
+Requires-Dist: numpy
+Requires-Dist: scipy
+
+# v_PVMismatch
+ Vectorized version of SunPower's PVMismatch using dynamic programming. PVMismatch is an explicit IV & PV curve trace calculator for PV system circuits.
+ 
+## Install & Setup
+In a fresh Python virtual environment, simply run:
+
+```bash
+$ pip install -i https://test.pypi.org/simple/ v-PVMismatch
+```
+
+### Install using .whl file (Recommended)
+Download files from Github and run the latest version of the .whl file using the command below from the parent folder.
+
+```bash
+$ pip install .\dist\v_PVMismatch-<version>-py3-none-any.whl
+```
+
+## Requirements
+
+v_PVMismatch requires Matplotlib, Future, NumPy, and SciPy.
+
+## Current Maintainer at Maxeon Solar
+
+@k-bsub
