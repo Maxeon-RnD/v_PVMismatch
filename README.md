@@ -5,7 +5,7 @@
 In a fresh Python virtual environment, simply run:
 
 ```bash
-$ pip install -i https://test.pypi.org/simple/ v-PVMismatch
+$ pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple v_PVMismatch
 ```
 
 ### Install using .whl file (Recommended)
