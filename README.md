@@ -1,5 +1,8 @@
 # v_PVMismatch
  Vectorized version of SunPower's PVMismatch using dynamic programming. PVMismatch is an explicit IV & PV curve trace calculator for PV system circuits.
+
+ ![image](https://github.com/user-attachments/assets/7844d83d-add9-4c66-bb7d-49b1ac6467bd)
+
  
 ## Install & Setup
 In a fresh Python virtual environment, simply run:
