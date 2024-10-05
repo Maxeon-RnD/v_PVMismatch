@@ -4,6 +4,7 @@ pyproject.toml
 src/v_PVMismatch/__init__.py
 src/v_PVMismatch/circuit_comb.py
 src/v_PVMismatch/utils.py
+src/v_PVMismatch/version.py
 src/v_PVMismatch/vpvcell.py
 src/v_PVMismatch/vpvmodule.py
 src/v_PVMismatch/vpvstring.py

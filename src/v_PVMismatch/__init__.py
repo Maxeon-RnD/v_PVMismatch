@@ -8,7 +8,7 @@ attributes to model PV system mismatch.
     >>> # import pvcell, pvmodule, pvstring and pvsystem
     >>> from v_pvmismatch import *
 """
-# from v_pvmismatch.version import __version__
+from v_PVMismatch.version import __version__
 
 from v_PVMismatch import (
     utils,
