@@ -96,7 +96,7 @@ def calcSeries_with_bypass(Curr, V, meanIsc, Imax, Imod_pts, Imod_negpts, npts, 
         if len(Curr.shape) == len(substr_bypass.shape):
             bypassed_mod = []
             for i, v, bypassed in zip(Curr, V, substr_bypass):
-                if ~bypassed.all():
+                if np.all(bypassed == False):
                     bp_interp = bypassed[0]*np.ones(Itot.shape)
                 else:
                     interpolator = interp1d(np.flipud(i), np.flipud(bypassed),
@@ -111,7 +111,7 @@ def calcSeries_with_bypass(Curr, V, meanIsc, Imax, Imod_pts, Imod_negpts, npts, 
             for i, v, bypassed_strs in zip(Curr, V, substr_bypass):
                 for idx_substr in range(bypassed_strs.shape[0]):
                     bypassed = bypassed_strs[idx_substr, :]
-                    if ~bypassed.all() or bypassed.all():
+                    if np.all(bypassed == False) or np.all(bypassed == True):
                         bp_interp = bypassed[0]*np.ones(Itot.shape)
                     else:
                         interpolator = interp1d(np.flipud(i), np.flipud(bypassed),
@@ -173,7 +173,7 @@ def calcParallel_with_bypass(Curr, V, Vmax, Vmin, negpts, pts, npts, substr_bypa
         if len(Curr.shape) == len(substr_bypass.shape):
             bypassed_mod = []
             for i, v, bypassed in zip(Curr, V, substr_bypass):
-                if ~bypassed.all():
+                if np.all(bypassed == False):
                     bp_interp = bypassed[0]*np.ones(Vtot.shape)
                 else:
                     interpolator = interp1d(v, bypassed, kind='previous',
@@ -193,7 +193,7 @@ def calcParallel_with_bypass(Curr, V, Vmax, Vmin, negpts, pts, npts, substr_bypa
                 for idx_mod in range(bypassed_strs.shape[0]):
                     for idx_substr in range(bypassed_strs.shape[1]):
                         bypassed = bypassed_strs[idx_mod, idx_substr, :]
-                        if ~bypassed.all() or bypassed.all():
+                        if np.all(bypassed == False) or np.all(bypassed == True):
                             bp_interp = bypassed[0]*np.ones(Vtot.shape)
                         else:
                             interpolator = interp1d(v, bypassed, kind='previous',

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "v_PVMismatch"
-version = "0.1.5"
+version = "0.1.7"
 authors = [
   { name="Kiran Balasubramanian", email="kiran.balasubramanian@maxeon.com" },
 ]
