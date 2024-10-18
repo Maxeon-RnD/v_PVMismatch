@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: v_pvmismatch
-Version: 0.1.8
+Version: 0.1.9
 Summary: Vectorized PVMismatch (v_PVMismatch) Package.
 Author-email: Kiran Balasubramanian <kiran.balasubramanian@maxeon.com>
 Maintainer-email: Kiran Balasubramanian <kiran.balasubramanian@maxeon.com>
@@ -20,21 +20,21 @@ Requires-Dist: scipy
 # v_PVMismatch
  Vectorized version of SunPower's PVMismatch using dynamic programming. PVMismatch is an explicit IV & PV curve trace calculator for PV system circuits.
 
- ![image](https://github.com/user-attachments/assets/7844d83d-add9-4c66-bb7d-49b1ac6467bd)
+ ![image](https://github.com/user-attachments/assets/35ae7565-d3ab-4123-9100-d77006e95215)
 
- 
+
 ## Install & Setup
 In a fresh Python virtual environment, simply run:
 
-```bash
-$ pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple v_pvmismatch
+```
+pip install v_pvmismatch
 ```
 
 ### Install using .whl file (Recommended)
 Download files from Github and run the latest version of the .whl file using the command below from the parent folder.
 
-```bash
-$ pip install .\dist\v_pvmismatch-<version>-py3-none-any.whl
+```
+pip install .\dist\v_pvmismatch-<version>-py3-none-any.whl
 ```
 
 ## Requirements
