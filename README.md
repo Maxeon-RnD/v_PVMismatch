@@ -22,6 +22,10 @@ pip install .\dist\v_pvmismatch-<version>-py3-none-any.whl
 
 v_PVMismatch requires Matplotlib, Future, NumPy, and SciPy.
 
+## Other Projects that use PVMismatch
+
+[PVShadeSim](https://github.com/Maxeon-RnD/PVShadeSim) includes a physical model for the PV system and utilizes v_PVMismatch for the electrical modeling. It allows for modeling physical representations of shading on a PV module. Various shade scenarios can be generated with an in-buit database. There are also structured databases for the PV cell and module classes in PVMismatch.
+
 ## Current Maintainer at Maxeon Solar
 
 @k-bsub
