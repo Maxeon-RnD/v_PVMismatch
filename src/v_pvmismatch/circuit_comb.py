@@ -106,7 +106,8 @@ def calcSeries_with_bypass(Curr, V, meanIsc, Imax, Imod_pts, Imod_negpts, npts, 
                 bypassed_mod.append(np.flipud(bp_interp))
             bypassed_mod = np.asarray(bypassed_mod)
         else:
-            bypassed_mod = np.zeros((Curr.shape[0], substr_bypass.shape[1], 2 * npts))
+            bypassed_mod = np.zeros(
+                (Curr.shape[0], substr_bypass.shape[1], 2 * npts))
             idx_mod = 0
             for i, v, bypassed_strs in zip(Curr, V, substr_bypass):
                 for idx_substr in range(bypassed_strs.shape[0]):
@@ -200,7 +201,8 @@ def calcParallel_with_bypass(Curr, V, Vmax, Vmin, negpts, pts, npts, substr_bypa
                                                     fill_value='extrapolate')
                             bp_interp = interpolator(Vtot)
                         bp_interp = bp_interp.astype(bool)
-                        bypassed_mod[idx_str, idx_mod, idx_substr, :] = bp_interp
+                        bypassed_mod[idx_str, idx_mod,
+                                     idx_substr, :] = bp_interp
                     idx_mod += 1
                 idx_str += 1
     else:
@@ -210,7 +212,8 @@ def calcParallel_with_bypass(Curr, V, Vmax, Vmin, negpts, pts, npts, substr_bypa
 
 
 def combine_parallel_circuits(IVprev_cols, pvconst,
-                              negpts, pts, Imod_pts, Imod_negpts, npts):
+                              negpts, pts, Imod_pts, Imod_negpts, npts,
+                              idxsprev_cols):
     """
     Combine crosstied circuits in a substring.
 
@@ -219,11 +222,14 @@ def combine_parallel_circuits(IVprev_cols, pvconst,
     """
     # combine crosstied circuits
     Irows, Vrows = [], []
+    Iparallels, Vparallels = [], []
     Isc_rows, Imax_rows = [], []
     for IVcols in zip(*IVprev_cols):
         Iparallel, Vparallel = zip(*IVcols)
         Iparallel = np.asarray(Iparallel)
         Vparallel = np.asarray(Vparallel)
+        Iparallels.append(Iparallel)
+        Vparallels.append(Vparallel)
         Irow, Vrow = calcParallel(
             Iparallel, Vparallel, Vparallel.max(),
             Vparallel.min(), negpts, pts, npts
@@ -232,13 +238,28 @@ def combine_parallel_circuits(IVprev_cols, pvconst,
         Vrows.append(Vrow)
         Isc_rows.append(np.interp(np.float64(0), Vrow, Irow))
         Imax_rows.append(Irow.max())
+    idx_rows, idx_parallels = [], []
+    for idxcols in zip(*idxsprev_cols):
+        idx_parallel = np.stack(idxcols, axis=0)
+        idx_parallel = np.asarray(idx_parallel)
+        idx_parallels.append(idx_parallel)
+        idx_rows.append(idx_parallel)
+    # idx_rows = np.stack(idx_rows, axis=0)
     Irows, Vrows = np.asarray(Irows), np.asarray(Vrows)
     Isc_rows = np.asarray(Isc_rows)
     Imax_rows = np.asarray(Imax_rows)
-    return calcSeries(
+    Isub, Vsub = calcSeries(
         Irows, Vrows, Isc_rows.mean(), Imax_rows.max(),
         Imod_pts, Imod_negpts, npts
     )
+    sub_str_data = {}
+    sub_str_data['Irows'] = Irows
+    sub_str_data['Vrows'] = Vrows
+    sub_str_data['Iparallels'] = Iparallels
+    sub_str_data['Vparallels'] = Vparallels
+    sub_str_data['idxrows'] = idx_rows
+    sub_str_data['idxparallels'] = idx_parallels
+    return Isub, Vsub, sub_str_data
 
 
 def parse_diode_config(Vbypass, cell_pos):

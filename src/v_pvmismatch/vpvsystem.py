@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Vectorized pvsystem."""
 
+import copy
 import numpy as np
 from .utils import reshape_ndarray, isin_nd, calcMPP_IscVocFFBPD
 from .vpvstring import calcStrings
@@ -10,7 +11,8 @@ from .circuit_comb import calcParallel_with_bypass
 # BUILD SYSTEM IV-PV CURVES----------------------------------------------------
 
 
-def gen_sys_Ee_Tcell_array(sim_len, Num_mod_X, Num_mod_Y, Num_cell_X, Num_cell_Y,
+def gen_sys_Ee_Tcell_array(sim_len, Num_mod_X, Num_mod_Y,
+                           Num_cell_X, Num_cell_Y,
                            Ee=1., Tcell=298.15):
     """
     Generate system level irradiance and cell temperature arrays.
@@ -69,7 +71,8 @@ def get_unique_Ee(Ee, search_type='cell', cell_type=None):
     Ee : numpy.ndarray
         System level irradiance array.
     search_type : str, optional
-        Which type of unique irradiance: 'cell', 'module', 'string', or 'system'. The default is 'cell'.
+        Which type of unique irrad: 'cell', 'module', 'string', or 'system'.
+        The default is 'cell'.
     cell_type : numpy.ndarray or None, optional
         Array containing the different cell types. The default is None.
 
@@ -120,7 +123,7 @@ def get_unique_Ee(Ee, search_type='cell', cell_type=None):
         u = np.unique(Ee, axis=0)
         u_cell_type = None
     else:
-        print('Incorrect search_type inputted. Allowed search_type: cell, module, string, system.')
+        print('Incorrect search_type. Allowed search_type: cell, module, string, system.')
 
     return u, u_cell_type
 
@@ -158,9 +161,13 @@ def calcTimeSeries(Ee_vec, sys_data):
     return time_data
 
 
-def calcACSystem(Ee_vec, Ee_mod, mod_data, NPT_dict, run_bpact=True, run_annual=False, save_bpact_freq=False):
+def calcACSystem(Ee_vec, Ee_mod, mod_data, NPT_dict,
+                 run_bpact=True, run_annual=False, save_bpact_freq=False,
+                 run_cellcurr=True):
     """
-    Generate the system-level IV curves for the unique systems in a simulation. This function is for AC or MLPE systems.
+    Generate the system-level IV curves for the unique systems in a simulation.
+
+    This function is for AC or MLPE systems.
 
     Parameters
     ----------
@@ -175,9 +182,13 @@ def calcACSystem(Ee_vec, Ee_mod, mod_data, NPT_dict, run_bpact=True, run_annual=
     run_bpact : bool, optional
         Flag to run bypass diode activation logic. The default is True.
     run_annual : bool, optional
-        Flag to delete large bypass diode activation array in case of an annual simulation. The default is False.
+        Flag to delete large BPD activation array for an annual simulation.
+        The default is False.
     save_bpact_freq : bool, optional
-        Flag to turn on saving bypass diode activation frequency input. The default is False.
+        Flag to turn on saving bypass diode activation frequency input.
+        The default is False.
+    run_cellcurr : bool, optional
+        Flag to run cell current estimation logic. The default is True.
 
     Returns
     -------
@@ -185,49 +196,81 @@ def calcACSystem(Ee_vec, Ee_mod, mod_data, NPT_dict, run_bpact=True, run_annual=
         Dictionary containing system IV curves.
 
     """
+    if run_cellcurr:
+        full_data = [0] * Ee_vec.shape[0]
     Ee_sys, _ = get_unique_Ee(Ee_vec, search_type='system')
     Ee_shp = Ee_sys.shape
     if run_bpact:
-        BpDmp = np.zeros((Ee_shp[0], Ee_shp[1], Ee_shp[2], mod_data['BPDiode_Active_MPP'].shape[1]))
+        BpDmp = np.zeros((Ee_shp[0], Ee_shp[1], Ee_shp[2],
+                          mod_data['BPDiode_Active_MPP'].shape[1]))
     Pmp = np.zeros(Ee_shp[0])
     if run_bpact:
         num_bpd_active = np.zeros(Ee_shp[0])
     else:
         num_bpd_active = 0
+    if run_cellcurr:
+        full_sys_data = []
     for idx_0 in range(Ee_shp[0]):
+        if run_cellcurr:
+            sim_data = []
         for idx_1 in range(Ee_shp[1]):
             # 1 String
             Ee_str1 = Ee_sys[idx_0, idx_1, :, :, :]
+            if run_cellcurr:
+                string_data = [0] * Ee_str1.shape[0]
             # Extract mod IV curves
             str_in_mod = isin_nd(Ee_mod, Ee_str1)
-            u, inverse, counts = np.unique(Ee_str1, axis=0, return_inverse=True,
+            u, inverse, counts = np.unique(Ee_str1, axis=0,
+                                           return_inverse=True,
                                            return_counts=True)
+            if run_cellcurr:
+                str_data_red = [0] * len(str_in_mod)
             Pmp_red = np.zeros((len(str_in_mod),))
             if run_bpact:
                 num_bpd_active_red = np.zeros((len(str_in_mod),))
                 BpDmp_red = np.zeros((len(str_in_mod), BpDmp.shape[-1]))
             for idx_red in range(str_in_mod.shape[0]):
+                if run_cellcurr:
+                    module_data = {}
+                    module_data['full_data'] = mod_data['full_data'][str_in_mod[idx_red]]
                 Ee_mod_red = Ee_mod[str_in_mod[idx_red], :, :]
                 Ee_str_red = np.stack([Ee_mod_red], axis=0)
                 Ee_str_red = np.stack([Ee_str_red], axis=0)
                 Ee_sys_red = np.stack([Ee_str_red], axis=0)
                 # String calculation
-                str_data = calcStrings(Ee_str_red, Ee_mod, mod_data, NPT_dict, run_bpact=run_bpact)
+                str_data = calcStrings(Ee_str_red, Ee_mod, mod_data, NPT_dict,
+                                       run_bpact=run_bpact,
+                                       run_cellcurr=run_cellcurr)
                 # System calculation
                 sys_data1 = calcSystem(
-                    Ee_sys_red, Ee_str_red, str_data, NPT_dict, run_bpact=run_bpact)
+                    Ee_sys_red, Ee_str_red, str_data, NPT_dict,
+                    run_bpact=run_bpact, run_cellcurr=run_cellcurr)
+                if run_cellcurr:
+                    module_data['BPDMPP'] = sys_data1['Bypass_Active_MPP'][0, 0, :, :].copy(
+                    )
+                    module_data['Imp'] = sys_data1['Imp'].copy()
+                    module_data['Vmp'] = sys_data1['Vmp'].copy()
+                    module_data['Isc'] = sys_data1['Isc'].copy()
+                    str_data_red[idx_red] = copy.deepcopy(module_data)
                 Pmp_red[idx_red] = sys_data1['Pmp'][0]
                 if run_bpact:
                     num_bpd_active_red[idx_red] = sys_data1['num_active_bpd'][0]
                     if save_bpact_freq:
-                        BpDmp_red[idx_red, :] = sys_data1['Bypass_Active_MPP'][0, 0, :, :]
+                        BpDmp_red[idx_red,
+                                  :] = sys_data1['Bypass_Active_MPP'][0, 0, :, :]
             Pmp_str = Pmp_red[inverse]
+            if run_cellcurr:
+                for idx_mod, idx_inv in enumerate(inverse.tolist()):
+                    string_data[idx_mod] = str_data_red[idx_inv]
+                sim_data.append(string_data)
             Pmp[idx_0] += Pmp_str.sum()
             if run_bpact:
                 num_bpd_active_str = num_bpd_active_red[inverse]
                 num_bpd_active[idx_0] += num_bpd_active_str.sum()
                 if save_bpact_freq:
                     BpDmp[idx_0, idx_1, :, :] = BpDmp_red[inverse, :]
+        if run_cellcurr:
+            full_sys_data.append(sim_data)
     # Store results in a dict
     u, inverse, counts = np.unique(Ee_vec, axis=0, return_inverse=True,
                                    return_counts=True)
@@ -241,6 +284,9 @@ def calcACSystem(Ee_vec, Ee_mod, mod_data, NPT_dict, run_bpact=True, run_annual=
     else:
         num_bpd_active_ts = 0
         BpDmp_full = np.zeros(Ee_vec.shape)
+    if run_cellcurr:
+        for idx_sim, idx_inv in enumerate(inverse.tolist()):
+            full_data[idx_sim] = full_sys_data[idx_inv]
     sys_data = dict()
     sys_data['Isys'] = np.zeros(Pmp_ts.shape)
     sys_data['Vsys'] = np.zeros(Pmp_ts.shape)
@@ -254,20 +300,25 @@ def calcACSystem(Ee_vec, Ee_mod, mod_data, NPT_dict, run_bpact=True, run_annual=
     sys_data['FF'] = np.zeros(Pmp_ts.shape)
     sys_data['Bypass_Active_MPP'] = BpDmp_full
     sys_data['num_active_bpd'] = num_bpd_active_ts
+    if run_cellcurr:
+        sys_data['full_data'] = copy.deepcopy(full_data)
 
     return sys_data
 
 
-def calcSystem(Ee_sys, Ee_str, str_data, NPT_dict, run_bpact=True, run_annual=False):
+def calcSystem(Ee_sys, Ee_str, str_data, NPT_dict,
+               run_bpact=True, run_annual=False, run_cellcurr=True):
     """
-    Generate the system-level IV curves for the unique systems in a simulation. This function is for DC string systems.
+    Generate the system-level IV curves for the unique systems in a simulation.
+
+    This function is for DC string systems.
 
     Parameters
     ----------
     Ee_sys : numpy.ndarray
         System level irradiance array.
     Ee_str : numpy.ndarray
-        4-D array containing the Irradiance at the cell level for all modules in each string.
+        4-D Irrad array at the cell level for all modules in each string.
     str_data : dict
         Dictionary containing string IV curves.
     NPT_dict : dict
@@ -275,7 +326,10 @@ def calcSystem(Ee_sys, Ee_str, str_data, NPT_dict, run_bpact=True, run_annual=Fa
     run_bpact : bool, optional
         Flag to run bypass diode activation logic. The default is True.
     run_annual : bool, optional
-        Flag to delete large bypass diode activation array in case of an annual simulation. The default is False.
+        Flag to delete BPD activation array for an annual simulation.
+        The default is False.
+    run_cellcurr : bool, optional
+        Flag to run cell current estimation logic. The default is True.
 
     Returns
     -------
@@ -287,7 +341,11 @@ def calcSystem(Ee_sys, Ee_str, str_data, NPT_dict, run_bpact=True, run_annual=Fa
     V_sys_curves = []
     P_sys_curves = []
     Bypass_str_curves = []
+    if run_cellcurr:
+        full_data = []
     for idx_sys in range(Ee_sys.shape[0]):
+        if run_cellcurr:
+            sing_sys = {}
 
         # 1 String
         Ee_sys1 = Ee_sys[idx_sys]
@@ -304,6 +362,10 @@ def calcSystem(Ee_sys, Ee_str, str_data, NPT_dict, run_bpact=True, run_annual=Fa
         # Expand for Str curves
         Istring = Istr_red[inverse, :]
         Vstring = Vstr_red[inverse, :]
+        if run_cellcurr:
+            sing_sys['Istrings'] = Istring.copy()
+            sing_sys['Vstrings'] = Vstring.copy()
+            sing_sys['Str_idxs'] = sys_in_str[inverse]
         if run_bpact:
             Bypass_substr = Bypass_substr_red[inverse, :, :]
         else:
@@ -314,7 +376,8 @@ def calcSystem(Ee_sys, Ee_str, str_data, NPT_dict, run_bpact=True, run_annual=Fa
         Npts = NPT_dict['Npts']
         # Run System Circuit model
         Isys, Vsys, bypassed_str = calcParallel_with_bypass(
-            Istring, Vstring, Vstring.max(), Vstring.min(), negpts, pts, Npts, Bypass_substr, run_bpact=run_bpact)
+            Istring, Vstring, Vstring.max(), Vstring.min(), negpts, pts, Npts,
+            Bypass_substr, run_bpact=run_bpact)
         Psys = Isys * Vsys
 
         I_sys_curves.append(np.reshape(Isys, (1, len(Isys))))
@@ -322,12 +385,14 @@ def calcSystem(Ee_sys, Ee_str, str_data, NPT_dict, run_bpact=True, run_annual=Fa
         P_sys_curves.append(np.reshape(Psys, (1, len(Psys))))
         if run_bpact:
             Bypass_str_curves.append(np.reshape(bypassed_str, (1,
-                                                               bypassed_str.shape[0],
-                                                               bypassed_str.shape[1],
-                                                               bypassed_str.shape[2],
-                                                               bypassed_str.shape[3])))
+                                                bypassed_str.shape[0],
+                                                bypassed_str.shape[1],
+                                                bypassed_str.shape[2],
+                                                bypassed_str.shape[3])))
         else:
             Bypass_str_curves.append(bypassed_str)
+        if run_cellcurr:
+            full_data.append(sing_sys)
 
     I_sys_curves = np.concatenate(I_sys_curves, axis=0)
     V_sys_curves = np.concatenate(V_sys_curves, axis=0)
@@ -341,7 +406,8 @@ def calcSystem(Ee_sys, Ee_str, str_data, NPT_dict, run_bpact=True, run_annual=Fa
         del str_data['Bypassed_substr']
 
     Imp, Vmp, Pmp, Isc, Voc, FF, BpDmp, num_bpd_active = calcMPP_IscVocFFBPD(
-        I_sys_curves, V_sys_curves, P_sys_curves, Bypass_str_curves, run_bpact=run_bpact, run_annual=run_annual)
+        I_sys_curves, V_sys_curves, P_sys_curves, Bypass_str_curves,
+        run_bpact=run_bpact, run_annual=run_annual)
 
     # Store results in a dict
     sys_data = dict()
@@ -361,5 +427,7 @@ def calcSystem(Ee_sys, Ee_str, str_data, NPT_dict, run_bpact=True, run_annual=Fa
     sys_data['FF'] = FF
     sys_data['Bypass_Active_MPP'] = BpDmp
     sys_data['num_active_bpd'] = num_bpd_active
+    if run_cellcurr:
+        sys_data['full_data'] = copy.deepcopy(full_data)
 
     return sys_data

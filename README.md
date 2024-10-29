@@ -20,7 +20,7 @@ pip install .\dist\v_pvmismatch-<version>-py3-none-any.whl
 
 ## Requirements
 
-v_PVMismatch requires Matplotlib, Future, NumPy, and SciPy.
+v_PVMismatch requires Matplotlib, Plotly, Future, NumPy, and SciPy.
 
 ## Other Projects that use PVMismatch
 

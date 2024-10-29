@@ -2,7 +2,9 @@ LICENSE
 README.md
 pyproject.toml
 src/v_pvmismatch/__init__.py
+src/v_pvmismatch/cell_curr.py
 src/v_pvmismatch/circuit_comb.py
+src/v_pvmismatch/plotting.py
 src/v_pvmismatch/utils.py
 src/v_pvmismatch/version.py
 src/v_pvmismatch/vpvcell.py
