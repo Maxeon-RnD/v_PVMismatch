@@ -2,11 +2,13 @@
 """Vectorized two diode model."""
 
 import numpy as np
+import pandas as pd
 from scipy import constants
 from .pvmismatch import pvconstants, pvcell
+from .utils import round_to_dec
 
-# ------------------------------------------------------------------------------
-# TWO DIODE MODEL -------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# TWO DIODE MODEL ------------------------------------------------------------
 
 
 # PVConstants
@@ -20,14 +22,16 @@ VBYPASS = np.float64(-0.5)  # [V] trigger voltage of bypass diode
 CELLAREA = np.float64(153.33)  # [cm^2] cell area
 
 
-def two_diode_model(pvcs, Ee, u_cell_type, Tcell, NPTS=200, NPTS_cell=100, use_cell_NPT=False):
+def two_diode_model(pvcs, Ee, u_cell_type, Tcell, NPTS=200, NPTS_cell=100,
+                    use_cell_NPT=False, cell_DBs=None, Ee_round=2):
     """
     Estimate IV curve using the two diode model native to pvmismatch.
 
     Parameters
     ----------
     pvcs : list
-        List of different pvmismatch pvcell objects. Most modules have the same cells. Some might not.
+        List of different pvmismatch pvcell objects.
+        Most modules have the same cells. Some might not.
     Ee : numpy.ndarray
         1-D array containing irradiances in suns.
     u_cell_type : list
@@ -124,7 +128,8 @@ def NPTS_f(Npts=200, vec_shape=(1, 1, 1, 1)):
     Npts : int, optional
         Number of points in IV curve. The default is 200. The default is 200.
     vec_shape : tuple, optional
-        tuple with system shape (num_string, string_len, row_cells, col_cells). The default is (1, 1, 1, 1).
+        tuple with system shape (num_str, str_len, row_cells, col_cells).
+        The default is (1, 1, 1, 1).
 
     Returns
     -------
