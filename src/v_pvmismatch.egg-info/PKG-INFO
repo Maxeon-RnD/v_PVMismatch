@@ -1,6 +1,6 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: v_pvmismatch
-Version: 0.2.1
+Version: 0.2.2
 Summary: Vectorized PVMismatch (v_PVMismatch) Package.
 Author-email: Kiran Balasubramanian <kiran.balasubramanian@maxeon.com>
 Maintainer-email: Kiran Balasubramanian <kiran.balasubramanian@maxeon.com>
@@ -17,6 +17,7 @@ Requires-Dist: plotly
 Requires-Dist: future
 Requires-Dist: numpy
 Requires-Dist: scipy
+Dynamic: license-file
 
 # v_PVMismatch
  Vectorized version of SunPower's PVMismatch using dynamic programming. PVMismatch is an explicit IV & PV curve trace calculator for PV system circuits.
@@ -40,7 +41,7 @@ pip install .\dist\v_pvmismatch-<version>-py3-none-any.whl
 
 ## Requirements
 
-v_PVMismatch requires Matplotlib, Future, NumPy, and SciPy.
+v_PVMismatch requires Matplotlib, Plotly, Future, NumPy, and SciPy.
 
 ## Other Projects that use PVMismatch
 
