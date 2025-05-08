@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Circuit combination and bypass diode configuration functions that are vectorized."""
+"""Vectorized Circuit combination and bypass diode configuration functions."""
 
 import numpy as np
 from scipy.interpolate import interp1d
 from .pvmismatch import pvconstants
 
-# ------------------------------------------------------------------------------
-# CIRCUIT COMBINATION FUNCTIONS-------------------------------------------------
+# ----------------------------------------------------------------------------
+# CIRCUIT COMBINATION FUNCTIONS-----------------------------------------------
 
 DEFAULT_BYPASS = 0
 MODULE_BYPASS = 1
@@ -18,7 +18,7 @@ def calcSeries(Curr, V, meanIsc, Imax, Imod_pts, Imod_negpts, npts):
     Calculate IV curve for cells and substrings in series.
 
     Given current and voltage in increasing order by voltage,
-    the average short circuit current and the max current at the breakdown voltage.
+    the avg short circuit current and the max current at breakdown voltage.
 
     :param Curr: cell or substring currents [A]
     :param V: cell or substring voltages [V]
@@ -45,16 +45,11 @@ def calcSeries(Curr, V, meanIsc, Imax, Imod_pts, Imod_negpts, npts):
     for i, v in zip(Curr, V):
         # interp requires x, y to be sorted by x in increasing order
         Vtot += pvconstants.npinterpx(Itot, np.flipud(i), np.flipud(v))
-    # print('Time elapsed to run loopy interp: ' + str(time.time() - t0) + ' s')
-    # Itot = np.repeat(Itot[:,np.newaxis], Curr.shape[0], axis=1).T
-    # t0 = time.time()
-    # Vtot = interp2d_wrap(np.flip(Curr, axis = 1), Itot, np.flip(V, axis = 1))
-    # Vtot = Vtot.sum(axis=1)
-    # print('Time elapsed to run vectorized interp: ' + str(time.time() - t0) + ' s')
     return np.flipud(Itot), np.flipud(Vtot)
 
 
-def calcSeries_with_bypass(Curr, V, meanIsc, Imax, Imod_pts, Imod_negpts, npts, substr_bypass, run_bpact=True):
+def calcSeries_with_bypass(Curr, V, meanIsc, Imax, Imod_pts, Imod_negpts,
+                           npts, substr_bypass, run_bpact=True):
     """
     Calculate IV curve for cells and substrings in series.
 
@@ -89,9 +84,9 @@ def calcSeries_with_bypass(Curr, V, meanIsc, Imax, Imod_pts, Imod_negpts, npts, 
         # interp requires x, y to be sorted by x in increasing order
         Vtot += pvconstants.npinterpx(Itot, np.flipud(i), np.flipud(v))
 
-    # Logic to check the shape of substr_bypass and ensure interpolations is done correctly
+    # Logic to check shp of substr_bypass and ensure interp is done correctly
     # Case 1 (Module): I, V, sb have same shape (n x npt)
-    # Case 2 (String): I, & V and sb have different dimensions (n x npt and m x n x npt)
+    # Case 2 (String): I, & V and sb have diff dim (n x npt and m x n x npt)
     if run_bpact:
         if len(Curr.shape) == len(substr_bypass.shape):
             bypassed_mod = []
@@ -100,7 +95,8 @@ def calcSeries_with_bypass(Curr, V, meanIsc, Imax, Imod_pts, Imod_negpts, npts, 
                     bp_interp = bypassed[0]*np.ones(Itot.shape)
                 else:
                     interpolator = interp1d(np.flipud(i), np.flipud(bypassed),
-                                            kind='previous', fill_value='extrapolate')
+                                            kind='previous',
+                                            fill_value='extrapolate')
                     bp_interp = interpolator(Itot)
                 bp_interp = bp_interp.astype(bool)
                 bypassed_mod.append(np.flipud(bp_interp))
@@ -115,11 +111,14 @@ def calcSeries_with_bypass(Curr, V, meanIsc, Imax, Imod_pts, Imod_negpts, npts, 
                     if np.all(bypassed == False) or np.all(bypassed == True):
                         bp_interp = bypassed[0]*np.ones(Itot.shape)
                     else:
-                        interpolator = interp1d(np.flipud(i), np.flipud(bypassed),
-                                                kind='previous', fill_value='extrapolate')
+                        interpolator = interp1d(np.flipud(i),
+                                                np.flipud(bypassed),
+                                                kind='previous',
+                                                fill_value='extrapolate')
                         bp_interp = interpolator(Itot)
                     bp_interp = bp_interp.astype(bool)
-                    bypassed_mod[idx_mod, idx_substr, :] = np.flipud(bp_interp)
+                    bypassed_mod[idx_mod, idx_substr, :] = np.flipud(
+                        bp_interp)
                 idx_mod += 1
     else:
         bypassed_mod = np.nan
@@ -149,7 +148,8 @@ def calcParallel(Curr, V, Vmax, Vmin, negpts, pts, npts):
     return Itot, Vtot
 
 
-def calcParallel_with_bypass(Curr, V, Vmax, Vmin, negpts, pts, npts, substr_bypass, run_bpact=True):
+def calcParallel_with_bypass(Curr, V, Vmax, Vmin, negpts, pts, npts,
+                             substr_bypass, run_bpact=True):
     """
     Calculate IV curve for cells and substrings in parallel.
 
@@ -183,11 +183,10 @@ def calcParallel_with_bypass(Curr, V, Vmax, Vmin, negpts, pts, npts, substr_bypa
                 bp_interp = bp_interp.astype(bool)
                 bypassed_mod.append(bp_interp)
             bypassed_mod = np.asarray(bypassed_mod)
-            # bypassed_mod = interp2d_wrap(V, Vtot1, substr_bypass.astype(float), kind='previous')
-            # bypassed_mod = np.round(bypassed_mod).astype(bool)
         else:
             bypassed_mod = np.zeros((Curr.shape[0], substr_bypass.shape[1],
-                                    substr_bypass.shape[2], 2 * npts), dtype=bool)
+                                    substr_bypass.shape[2], 2 * npts),
+                                    dtype=bool)
             idx_str = 0
             for i, v, bypassed_strs in zip(Curr, V, substr_bypass):
                 idx_mod = 0
@@ -197,7 +196,8 @@ def calcParallel_with_bypass(Curr, V, Vmax, Vmin, negpts, pts, npts, substr_bypa
                         if np.all(bypassed == False) or np.all(bypassed == True):
                             bp_interp = bypassed[0]*np.ones(Vtot.shape)
                         else:
-                            interpolator = interp1d(v, bypassed, kind='previous',
+                            interpolator = interp1d(v, bypassed,
+                                                    kind='previous',
                                                     fill_value='extrapolate')
                             bp_interp = interpolator(Vtot)
                         bp_interp = bp_interp.astype(bool)

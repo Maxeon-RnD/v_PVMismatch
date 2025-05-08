@@ -4,9 +4,10 @@
 import numpy as np
 from functools import partial
 from scipy.interpolate import interp1d
+import pickle
 
-# ------------------------------------------------------------------------------
-# HELPER FUNCTIONS THAT ARE VECTORIZED ----------------------------------------
+# ----------------------------------------------------------------------------
+# HELPER FUNCTIONS THAT ARE VECTORIZED ---------------------------------------
 
 
 def reshape_ndarray(x, arr_shape):
@@ -78,7 +79,7 @@ def isin_nd(a, b):
         DESCRIPTION.
 
     """
-    # a,b are the 3D input arrays to give us "isin-like" functionality across them
+    # a,b are 3D input arrays to give us "isin-like" functionality across them
     A, B = view1D(a.reshape(a.shape[0], -1), b.reshape(b.shape[0], -1))
     return np.nonzero(np.isin(A, B))[0]
 
@@ -110,7 +111,7 @@ def isin_nd_searchsorted(a, b):
 
 
 # def searchsorted2d(a, b):
-#     # https://stackoverflow.com/questions/40588403/vectorized-searchsorted-numpy
+# # https://stackoverflow.com/questions/40588403/vectorized-searchsorted-numpy
 #     m, n = a.shape
 #     max_num = np.maximum(a.max() - a.min(), b.max() - b.min()) + 1
 #     r = max_num*np.arange(a.shape[0])[:, None]
@@ -130,9 +131,12 @@ def interp_coef(x0: np.ndarray, x: np.ndarray, side='right', kind='linear'):
     x : numpy.ndarray
         Array to interpolate to.
     side : str, optional
-        Which side to interpolate from (input for numpy.searchsorted). The default is 'right'.
+        Which side to interpolate from (input for numpy.searchsorted).
+        The default is 'right'.
     kind : str, optional
-        What type of interpolation. The options are 'linear', 'previous', and 'next'. The default is 'linear'.
+        What type of interpolation.
+        The options are 'linear', 'previous', and 'next'.
+        The default is 'linear'.
 
     Returns
     -------
@@ -149,7 +153,8 @@ def interp_coef(x0: np.ndarray, x: np.ndarray, side='right', kind='linear'):
     # https://towardsdatascience.com/linear-interpolation-in-python-a-single-line-of-code-25ab83b764f9
     # Modified to do sorting in 2d
     # find the indices into the original array
-    # hi_col = np.minimum(x0.shape[1] - 1, searchsorted2d(x0, x)) # Doesn't work for large float numbers >1e20
+    # hi_col = np.minimum(x0.shape[1] - 1,
+    #      searchsorted2d(x0, x)) # Doesn't work for large float numbers >1e20
     mapfunc = partial(np.searchsorted, side=side)
     hi_col = np.minimum(
         x0.shape[1] - 1, np.array(list(map(mapfunc, x0, x))))
@@ -159,8 +164,10 @@ def interp_coef(x0: np.ndarray, x: np.ndarray, side='right', kind='linear'):
 
     # calculate the distance within the range
     if kind == 'linear':
-        d_left = x - x0[hi_row.flatten(), lo_col.flatten()].reshape(lo_col.shape)
-        d_right = x0[hi_row.flatten(), hi_col.flatten()].reshape(hi_col.shape) - x
+        d_left = x - x0[hi_row.flatten(),
+                        lo_col.flatten()].reshape(lo_col.shape)
+        d_right = x0[hi_row.flatten(),
+                     hi_col.flatten()].reshape(hi_col.shape) - x
         d_total = d_left + d_right
         # weights are the proportional distance
         w = d_right / d_total
@@ -208,7 +215,8 @@ def interp_2d(y0: np.ndarray, coef, x, x0):
     idx_nan = np.where(left)
     xleft = x[left]
     yleft = y0[idx_nan[0], 0] + (xleft - x0[idx_nan[0], 0]) / \
-        (x0[idx_nan[0], 1] - x0[idx_nan[0], 0]) * (y0[idx_nan[0], 1] - y0[idx_nan[0], 0])
+        (x0[idx_nan[0], 1] - x0[idx_nan[0], 0]) * (
+            y0[idx_nan[0], 1] - y0[idx_nan[0], 0])
     yint[idx_nan[0], idx_nan[1]] = yleft
     # extrapolate right only
     # extrapolate right
@@ -217,7 +225,8 @@ def interp_2d(y0: np.ndarray, coef, x, x0):
     idx_nan = np.where(right)
     xright = x[right]
     yright = y0[idx_nan[0], -1] + (xright - x0[idx_nan[0], -1]) / \
-        (x0[idx_nan[0], -2] - x0[idx_nan[0], -1]) * (y0[idx_nan[0], -2] - y0[idx_nan[0], -1])
+        (x0[idx_nan[0], -2] - x0[idx_nan[0], -1]) * (
+            y0[idx_nan[0], -2] - y0[idx_nan[0], -1])
     yint[idx_nan[0], idx_nan[1]] = yright
     return yint
 
@@ -235,9 +244,12 @@ def interp2d_wrap(x0, x, y0, side='right', kind='linear'):
     y0 : np.ndarray
         Y Array to interpolate from.
     side : str, optional
-        Which side to interpolate from (input for numpy.searchsorted). The default is 'right'.
+        Which side to interpolate from (input for numpy.searchsorted).
+        The default is 'right'.
     kind : str, optional
-        What type of interpolation. The options are 'linear', 'previous', and 'next'. The default is 'linear'.
+        What type of interpolation.
+        The options are 'linear', 'previous', and 'next'.
+        The default is 'linear'.
 
     Returns
     -------
@@ -253,7 +265,8 @@ def interp2d_wrap(x0, x, y0, side='right', kind='linear'):
     return yint
 
 
-def calcMPP_IscVocFFBPD(Isys, Vsys, Psys, bypassed_mod_arr, run_bpact=True, run_annual=False):
+def calcMPP_IscVocFFBPD(Isys, Vsys, Psys, bypassed_mod_arr,
+                        run_bpact=True, run_annual=False):
     """
     Calculate MPP IV parameters. This method is vectorized.
 
@@ -266,11 +279,12 @@ def calcMPP_IscVocFFBPD(Isys, Vsys, Psys, bypassed_mod_arr, run_bpact=True, run_
     Psys : np.ndarray
         2-D array of power curves.
     bypassed_mod_arr : np.ndarray
-        3-D or 5-D array of bypass diode activation curves for each substring in each module of the system.
+        3-D or 5-D arr of bypass diode act curves for substring in mod of sys.
     run_bpact : bool, optional
         Flag to run bypass diode activation logic. The default is True.
     run_annual : bool, optional
-        Flag to delete large bypass diode activation array in case of an annual simulation. The default is False.
+        Flag to delete large bypass diode act arr in case of annual sim.
+        The default is False.
 
     Returns
     -------
@@ -287,7 +301,7 @@ def calcMPP_IscVocFFBPD(Isys, Vsys, Psys, bypassed_mod_arr, run_bpact=True, run_
     FF : np.ndarray
         1-D array of FF.
     BpDmp : np.ndarray
-        Bypass diode activation at MPP for each substring in each module of the system.
+        Bypass diode activation at MPP for substr in each mod of the system.
     num_bpd_active : np.ndarray
         1-D array of number of bypass diodes active.
 
@@ -323,7 +337,8 @@ def calcMPP_IscVocFFBPD(Isys, Vsys, Psys, bypassed_mod_arr, run_bpact=True, run_
     for idx_time in range(Psys.shape[0]):
         # Only interpolate if Current data is non-zero
         if Vsys[idx_time, :].nonzero()[0].size != 0:
-            Voc[idx_time] = np.interp(np.float64(0), np.flipud(Isys[idx_time, :]),
+            Voc[idx_time] = np.interp(np.float64(0),
+                                      np.flipud(Isys[idx_time, :]),
                                       np.flipud(Vsys[idx_time, :]))
             Isc[idx_time] = np.interp(np.float64(
                 0), Vsys[idx_time, :], Isys[idx_time, :])  # calculate Isc
@@ -335,22 +350,33 @@ def calcMPP_IscVocFFBPD(Isys, Vsys, Psys, bypassed_mod_arr, run_bpact=True, run_
             BpDmp = np.zeros((Pmp.shape[0], BpD_Active.shape[2]), dtype=bool)
             for idx_row in range(BpD_Active.shape[0]):
                 for idx_col in range(BpD_Active.shape[2]):
-                    interpolator = interp1d(P[idx_row, :], BpD_Active[idx_row, :, idx_col], kind='previous',
+                    interpolator = interp1d(P[idx_row, :],
+                                            BpD_Active[idx_row, :, idx_col],
+                                            kind='previous',
                                             fill_value='extrapolate')
-                    BpDmp[idx_row, idx_col] = interpolator(Pmp[idx_row]).astype(bool)
+                    BpDmp[idx_row, idx_col] = interpolator(
+                        Pmp[idx_row]).astype(bool)
             num_bpd_active = BpDmp.sum(axis=1)
         else:
             BpD_Active = bypassed_mod_arr[mpp_row, :, :, :, mpp_lohi]
-            BpDmp = np.zeros((Pmp.shape[0], BpD_Active.shape[2], BpD_Active.shape[3], BpD_Active.shape[4]), dtype=bool)
+            BpDmp = np.zeros((Pmp.shape[0], BpD_Active.shape[2],
+                              BpD_Active.shape[3], BpD_Active.shape[4]),
+                             dtype=bool)
             for idx_row in range(BpD_Active.shape[0]):
                 for idx_str in range(BpD_Active.shape[2]):
                     for idx_mod in range(BpD_Active.shape[3]):
                         for idx_substr in range(BpD_Active.shape[4]):
                             interpolator = interp1d(P[idx_row, :],
-                                                    BpD_Active[idx_row, :, idx_str, idx_mod,
-                                                               idx_substr], kind='previous',
+                                                    BpD_Active[idx_row, :,
+                                                               idx_str,
+                                                               idx_mod,
+                                                               idx_substr],
+                                                    kind='previous',
                                                     fill_value='extrapolate')
-                            BpDmp[idx_row, idx_str, idx_mod, idx_substr] = interpolator(Pmp[idx_row]).astype(bool)
+                            BpDmp[idx_row, idx_str,
+                                  idx_mod,
+                                  idx_substr] = interpolator(
+                                      Pmp[idx_row]).astype(bool)
             num_bpd_active = BpDmp.sum(axis=3).sum(axis=2).sum(axis=1)
     else:
         BpDmp = np.nan
@@ -359,3 +385,90 @@ def calcMPP_IscVocFFBPD(Isys, Vsys, Psys, bypassed_mod_arr, run_bpact=True, run_
         del bypassed_mod_arr
 
     return Imp, Vmp, Pmp, Isc, Voc, FF, BpDmp, num_bpd_active
+
+
+def round_to_dec(vector, val):
+    """
+    Round to nearest value or number. Example 2.03, 0.02 becomes 2.02.
+
+    Parameters
+    ----------
+    vector : numpy.array
+        Array of numbers.
+    val : float
+        Resolution.
+
+    Returns
+    -------
+    numpy.array
+        Rounded array.
+
+    """
+    return np.round(vector / val) * val
+
+
+def save_pickle(filename, variable):
+    """
+    Save pickle file.
+
+    Parameters
+    ----------
+    filename : str
+        File path.
+    variable : python variable
+        Variable to save to pickle file.
+
+    Returns
+    -------
+    None.
+
+    """
+    with open(filename, 'wb') as handle:
+        pickle.dump(variable, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def load_pickle(filename):
+    """
+    Load data from a pickle file.
+
+    Parameters
+    ----------
+    filename : str
+        File path.
+
+    Returns
+    -------
+    db : python variable
+        Variable that is stored in the pickle file.
+
+    """
+    with open(filename, 'rb') as handle:
+        db = pickle.load(handle)
+    return db
+
+
+def find_row_index(array_2d, array_1d):
+    """
+    Check if a D arr exists as row in 2D arr and returns index of the row.
+
+    Args
+    ----
+        array_2d (numpy.ndarray): The 2D array to search within.
+        array_1d (numpy.ndarray): The 1D array to search for.
+
+    Returns
+    -------
+        int or None: The index of the row if found, otherwise None.
+    """
+    # Check if number of columns is the same.
+    # This is to consider veriable string sizes within each diode subsection
+    if array_2d.shape[1] < len(array_1d):
+        zeros_column = np.zeros((array_2d.shape[0],
+                                 len(array_1d) - array_2d.shape[1]))
+        array_2d = np.hstack((array_2d, zeros_column))
+    elif array_2d.shape[1] > len(array_1d):
+        array_1d = np.pad(array_1d, (0, array_2d.shape[1] - len(array_1d)),
+                          'constant')
+    comparison = array_2d == array_1d
+    row_indices = np.where(np.all(comparison, axis=1))[0]
+    return row_indices[0] if row_indices.size > 0 else None

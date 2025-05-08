@@ -3,19 +3,22 @@
 
 import copy
 import numpy as np
+import pandas as pd
 from .pvmismatch import pvconstants
-from .utils import calcMPP_IscVocFFBPD
+from .utils import (calcMPP_IscVocFFBPD, save_pickle, load_pickle,
+                    round_to_dec, find_row_index)
 from .circuit_comb import calcSeries, calcParallel
 from .circuit_comb import combine_parallel_circuits, parse_diode_config
 from .circuit_comb import calcSeries_with_bypass, calcParallel_with_bypass
 from .circuit_comb import DEFAULT_BYPASS, MODULE_BYPASS, CUSTOM_SUBSTR_BYPASS
-# ------------------------------------------------------------------------------
-# CALCULATE MODULE IV-PV CURVES------------------------------------------------
+# ----------------------------------------------------------------------------
+# CALCULATE MODULE IV-PV CURVES-----------------------------------------------
 
 
 def calcMods(cell_pos, maxmod, cell_index_map, Ee_mod, Ee_cell,
              u_cell_type, cell_type, cell_data,
-             outer_circuit, run_bpact=True, run_cellcurr=True):
+             outer_circuit, run_bpact=True, run_cellcurr=True,
+             mod_DBs=None, ss_DBs=None, Ee_round=2, IV_trk_ct=True):
     """
     Generate all module IV curves and store results in a dictionary.
 
@@ -50,6 +53,88 @@ def calcMods(cell_pos, maxmod, cell_index_map, Ee_mod, Ee_cell,
         Dictionary containing module IV curves.
 
     """
+    if mod_DBs:
+        # Load databases
+        mod_irr_db_path = mod_DBs[0]
+        mod_isc_db_path = mod_DBs[1]
+        mod_I_db_path = mod_DBs[2]
+        mod_V_db_path = mod_DBs[3]
+        mod_Isubstr_db_path = mod_DBs[4]
+        mod_Vsubstr_db_path = mod_DBs[5]
+        mod_Isubstr_pbp_db_path = mod_DBs[6]
+        mod_Vsubstr_pbp_db_path = mod_DBs[7]
+        mod_bypassed_db_path = mod_DBs[8]
+        mod_counts_db_path = mod_DBs[9]
+        IV_res = mod_DBs[10]
+        try:
+            mod_irr_db = load_pickle(mod_irr_db_path)
+            mod_isc_db = load_pickle(mod_isc_db_path)
+            mod_I_db = load_pickle(mod_I_db_path)
+            mod_V_db = load_pickle(mod_V_db_path)
+            mod_Isubstr_db = load_pickle(mod_Isubstr_db_path)
+            mod_Vsubstr_db = load_pickle(mod_Vsubstr_db_path)
+            mod_Isubstr_pbp_db = load_pickle(mod_Isubstr_pbp_db_path)
+            mod_Vsubstr_pbp_db = load_pickle(mod_Vsubstr_pbp_db_path)
+            mod_bypassed_db = load_pickle(mod_bypassed_db_path)
+            if IV_trk_ct:
+                mod_counts_db = load_pickle(mod_counts_db_path)
+            last_index_df = mod_irr_db.shape[0]
+        except FileNotFoundError:
+            mod_irr_db = []
+            mod_isc_db = []
+            mod_I_db = []
+            mod_V_db = []
+            mod_Isubstr_db = {}
+            mod_Vsubstr_db = {}
+            mod_Isubstr_pbp_db = {}
+            mod_Vsubstr_pbp_db = {}
+            mod_bypassed_db = {}
+            if IV_trk_ct:
+                mod_counts_db = []
+            last_index_df = 0
+        # Round the Ee
+        # Ee_mod = round_to_dec(Ee_mod, IV_res)
+        # Ee_mod = Ee_mod.round(Ee_round)
+    if ss_DBs:
+        # Load databases
+        ss_irr_db_path = ss_DBs[0]
+        ss_Id_pre_db_path = ss_DBs[1]
+        ss_Vd_pre_db_path = ss_DBs[2]
+        ss_cts_pre_db_path = ss_DBs[3]
+        ss_irr_ss_db_path = ss_DBs[4]
+        ss_Iss_db_path = ss_DBs[5]
+        ss_Vss_db_path = ss_DBs[6]
+        ss_cts_ss_db_path = ss_DBs[7]
+        IV_res = ss_DBs[8]
+        try:
+            ss_irr_db = load_pickle(ss_irr_db_path)
+            ss_Id_pre_db = load_pickle(ss_Id_pre_db_path)
+            ss_Vd_pre_db = load_pickle(ss_Vd_pre_db_path)
+            ss_cts_pre_db = load_pickle(ss_cts_pre_db_path)
+            last_index_df = ss_irr_db.shape[0]
+        except FileNotFoundError:
+            ss_irr_db = []
+            ss_Id_pre_db = []
+            ss_Vd_pre_db = []
+            ss_cts_pre_db = []
+            last_index_df = 0
+        try:
+            ss_irr_ss_db = load_pickle(ss_irr_ss_db_path)
+            ss_Iss_db = load_pickle(ss_Iss_db_path)
+            ss_Vss_db = load_pickle(ss_Vss_db_path)
+            ss_cts_ss_db = load_pickle(ss_cts_ss_db_path)
+            last_index_ss_df = ss_irr_ss_db.shape[0]
+        except FileNotFoundError:
+            ss_irr_ss_db = []
+            ss_Iss_db = []
+            ss_Vss_db = []
+            ss_cts_ss_db = []
+            last_index_ss_df = 0
+        ss_pDBs = [ss_irr_db, ss_Id_pre_db, ss_Vd_pre_db, ss_cts_pre_db,
+                   ss_irr_ss_db, ss_Iss_db, ss_Vss_db, ss_cts_ss_db,
+                   last_index_df, last_index_ss_df, IV_res]
+    else:
+        ss_pDBs = None
     Vbypass = maxmod.Vbypass
     I_mod_curves = []
     V_mod_curves = []
@@ -67,40 +152,97 @@ def calcMods(cell_pos, maxmod, cell_index_map, Ee_mod, Ee_cell,
         cell_ids = cell_index_map.flatten()
         idx_sort = np.argsort(cell_ids)
         Ee_mod1 = Ee_mod[idx_mod].flatten()[idx_sort]
-        cell_type1 = cell_type.flatten()[idx_sort]
-        # Extract cell IV curves
-        mod_in_cell = np.where(np.in1d(Ee_cell+u_cell_type,
-                                       Ee_mod1+cell_type1))[0]
-        Icell_red = cell_data['Icell'][mod_in_cell, :]
-        Vcell_red = cell_data['Vcell'][mod_in_cell, :]
-        Vrbd_red = cell_data['VRBD'][mod_in_cell]
-        Voc_red = cell_data['Voc'][mod_in_cell]
-        Isc_red = cell_data['Isc'][mod_in_cell]
-        u, inverse, counts = np.unique(Ee_mod1+cell_type1, return_inverse=True,
-                                       return_counts=True)
-        # Expand for Mod curves
-        Icell = Icell_red[inverse, :]
-        Vcell = Vcell_red[inverse, :]
-        VRBD = Vrbd_red[inverse]
-        Voc = Voc_red[inverse]
-        Isc = Isc_red[inverse]
-        NPT_dict = cell_data['NPT']
-        # Run Module Circuit model
-        sing_mod = calcMod(Icell, Vcell, VRBD, Voc, Isc,
-                           cell_pos, Vbypass, NPT_dict,
-                           outer=outer_circuit, run_bpact=run_bpact,
-                           run_cellcurr=run_cellcurr)
-        if run_cellcurr:
-            full_data.append(sing_mod)
-        Imod = sing_mod['Imod'].copy()
-        Vmod = sing_mod['Vmod'].copy()
-        Pmod = sing_mod['Pmod'].copy()
-        Isubstr = sing_mod['Isubstr'].copy()
-        Vsubstr = sing_mod['Vsubstr'].copy()
-        mean_Isc = sing_mod['Isc']
-        Isubstr_pre_bypass = sing_mod['Isubstr_pre_bypass'].copy()
-        Vsubstr_pre_bypass = sing_mod['Vsubstr_pre_bypass'].copy()
-        bypassed_mod = sing_mod['bypassed_mod'].copy()
+        # Ee_mod1 = Ee_mod1.round(Ee_round)
+        if mod_DBs:
+            # If a database is used
+            if len(mod_irr_db) > 0:
+                idx_row = find_row_index(mod_irr_db, Ee_mod1)
+            else:
+                idx_row = None
+            if idx_row is not None:
+                use_DB = True
+                mean_Isc = float(mod_isc_db[idx_row, 0])
+                Imod = mod_I_db[idx_row, :].astype(float)
+                Vmod = mod_V_db[idx_row, :].astype(float)
+                Pmod = Imod * Vmod
+                Isubstr = mod_Isubstr_db[idx_row].copy()
+                Vsubstr = mod_Vsubstr_db[idx_row].copy()
+                Isubstr_pre_bypass = mod_Isubstr_pbp_db[idx_row].copy()
+                Vsubstr_pre_bypass = mod_Vsubstr_pbp_db[idx_row].copy()
+                bypassed_mod = mod_bypassed_db[idx_row].copy()
+                if IV_trk_ct:
+                    mod_ct = mod_counts_db[idx_row] + 1
+            else:
+                use_DB = False
+                if IV_trk_ct:
+                    mod_ct = 1
+            if IV_trk_ct:
+                if len(mod_counts_db) == 0:
+                    mod_counts_db = np.array([mod_ct])
+                else:
+                    if idx_row is not None:
+                        mod_counts_db[idx_row] = mod_ct
+                    else:
+                        mod_counts_db = np.vstack([mod_counts_db, mod_ct])
+        else:
+            use_DB = False
+        if not use_DB:
+            cell_type1 = cell_type.flatten()[idx_sort]
+            # Extract cell IV curves
+            mod_in_cell = np.where(np.in1d(Ee_cell+u_cell_type,
+                                           Ee_mod1+cell_type1))[0]
+            Icell_red = cell_data['Icell'][mod_in_cell, :]
+            Vcell_red = cell_data['Vcell'][mod_in_cell, :]
+            Vrbd_red = cell_data['VRBD'][mod_in_cell]
+            Voc_red = cell_data['Voc'][mod_in_cell]
+            Isc_red = cell_data['Isc'][mod_in_cell]
+            u, inverse, counts = np.unique(Ee_mod1+cell_type1,
+                                           return_inverse=True,
+                                           return_counts=True)
+            # Expand for Mod curves
+            Icell = Icell_red[inverse, :]
+            Vcell = Vcell_red[inverse, :]
+            VRBD = Vrbd_red[inverse]
+            Voc = Voc_red[inverse]
+            Isc = Isc_red[inverse]
+            NPT_dict = cell_data['NPT']
+            # Run Module Circuit model
+            sing_mod, ss_pDBs = calcMod(Ee_mod1, Icell, Vcell, VRBD, Voc, Isc,
+                                        cell_pos, Vbypass, NPT_dict,
+                                        outer=outer_circuit,
+                                        run_bpact=run_bpact,
+                                        run_cellcurr=run_cellcurr,
+                                        ss_DBs=ss_pDBs, IV_trk_ct=IV_trk_ct)
+            if run_cellcurr:
+                full_data.append(sing_mod)
+            Imod = sing_mod['Imod'].copy()
+            Vmod = sing_mod['Vmod'].copy()
+            Pmod = sing_mod['Pmod'].copy()
+            Isubstr = sing_mod['Isubstr'].copy()
+            Vsubstr = sing_mod['Vsubstr'].copy()
+            mean_Isc = sing_mod['Isc']
+            Isubstr_pre_bypass = sing_mod['Isubstr_pre_bypass'].copy()
+            Vsubstr_pre_bypass = sing_mod['Vsubstr_pre_bypass'].copy()
+            bypassed_mod = sing_mod['bypassed_mod'].copy()
+            if mod_DBs:
+                # Store results in IV database
+                # First the prms
+                if len(mod_irr_db) == 0:
+                    mod_irr_db = np.array([Ee_mod1.tolist()])
+                    mod_isc_db = np.array([[mean_Isc]])
+                    mod_I_db = np.array([Imod.tolist()])
+                    mod_V_db = np.array([Vmod.tolist()])
+                else:
+                    mod_isc_db = np.vstack([mod_isc_db, mean_Isc])
+                    mod_irr_db = np.vstack([mod_irr_db, Ee_mod1])
+                    mod_I_db = np.vstack([mod_I_db, Imod])
+                    mod_V_db = np.vstack([mod_V_db, Vmod])
+                mod_Isubstr_db[last_index_df] = Isubstr.copy()
+                mod_Vsubstr_db[last_index_df] = Vsubstr.copy()
+                mod_Isubstr_pbp_db[last_index_df] = Isubstr_pre_bypass.copy()
+                mod_Vsubstr_pbp_db[last_index_df] = Vsubstr_pre_bypass.copy()
+                mod_bypassed_db[last_index_df] = bypassed_mod.copy()
+                last_index_df += 1
         I_mod_curves.append(np.reshape(Imod, (1, len(Imod))))
         V_mod_curves.append(np.reshape(Vmod, (1, len(Vmod))))
         P_mod_curves.append(np.reshape(Pmod, (1, len(Pmod))))
@@ -110,10 +252,12 @@ def calcMods(cell_pos, maxmod, cell_index_map, Ee_mod, Ee_cell,
             Vsubstr, (1, Vsubstr.shape[0], Vsubstr.shape[1])))
         Isubstr_pre_bypass_curves.append(np.reshape(
             Isubstr_pre_bypass,
-            (1, Isubstr_pre_bypass.shape[0], Isubstr_pre_bypass.shape[1])))
+            (1, Isubstr_pre_bypass.shape[0],
+             Isubstr_pre_bypass.shape[1])))
         Vsubstr_pre_bypass_curves.append(np.reshape(
             Vsubstr_pre_bypass,
-            (1, Vsubstr_pre_bypass.shape[0], Vsubstr_pre_bypass.shape[1])))
+            (1, Vsubstr_pre_bypass.shape[0],
+             Vsubstr_pre_bypass.shape[1])))
         mean_Iscs.append(mean_Isc)
         if run_bpact:
             bypassed_mod_arr.append(np.reshape(
@@ -140,6 +284,46 @@ def calcMods(cell_pos, maxmod, cell_index_map, Ee_mod, Ee_cell,
         I_mod_curves, V_mod_curves, P_mod_curves, bypassed_mod_arr,
         run_bpact=run_bpact)
 
+    # Save the updated databases
+    if mod_DBs:
+        save_pickle(mod_irr_db_path, mod_irr_db)
+        save_pickle(mod_isc_db_path, mod_isc_db)
+        save_pickle(mod_I_db_path, mod_I_db)
+        save_pickle(mod_V_db_path, mod_V_db)
+        save_pickle(mod_Isubstr_db_path, mod_Isubstr_db)
+        save_pickle(mod_Vsubstr_db_path, mod_Vsubstr_db)
+        save_pickle(mod_Isubstr_pbp_db_path, mod_Isubstr_pbp_db)
+        save_pickle(mod_Vsubstr_pbp_db_path, mod_Vsubstr_pbp_db)
+        save_pickle(mod_bypassed_db_path, mod_bypassed_db)
+        if IV_trk_ct:
+            save_pickle(mod_counts_db_path, mod_counts_db)
+    # Save the updated databases
+    if ss_pDBs:
+        ss_irr_db = ss_pDBs[0]
+        ss_Id_pre_db = ss_pDBs[1]
+        ss_Vd_pre_db = ss_pDBs[2]
+        ss_cts_pre_db = ss_pDBs[3]
+        ss_irr_ss_db = ss_pDBs[4]
+        ss_Iss_db = ss_pDBs[5]
+        ss_Vss_db = ss_pDBs[6]
+        ss_cts_ss_db = ss_pDBs[7]
+        last_index_df = ss_pDBs[8]
+        last_index_ss_df = ss_pDBs[9]
+        IV_res = ss_pDBs[10]
+    if ss_DBs:
+        if len(ss_irr_db) > 0:
+            save_pickle(ss_irr_db_path, ss_irr_db)
+            save_pickle(ss_Id_pre_db_path, ss_Id_pre_db)
+            save_pickle(ss_Vd_pre_db_path, ss_Vd_pre_db)
+            if IV_trk_ct:
+                save_pickle(ss_cts_pre_db_path, ss_cts_pre_db)
+        if len(ss_irr_ss_db) > 0:
+            save_pickle(ss_irr_ss_db_path, ss_irr_ss_db)
+            save_pickle(ss_Iss_db_path, ss_Iss_db)
+            save_pickle(ss_Vss_db_path, ss_Vss_db)
+            if IV_trk_ct:
+                save_pickle(ss_cts_ss_db_path, ss_cts_ss_db)
+
     # Store results in a dict
     mod_data = dict()
     mod_data['Imod'] = I_mod_curves
@@ -165,8 +349,9 @@ def calcMods(cell_pos, maxmod, cell_index_map, Ee_mod, Ee_cell,
     return mod_data
 
 
-def calcMod(Icell, Vcell, VRBD, Voc, Isc, cell_pos, Vbypass, NPT_dict,
-            outer='series', run_bpact=True, run_cellcurr=True):
+def calcMod(Ee_mod, Icell, Vcell, VRBD, Voc, Isc, cell_pos, Vbypass,
+            NPT_dict, outer='series', run_bpact=True, run_cellcurr=True,
+            ss_DBs=None, IV_trk_ct=True):
     """
     Calculate module I-V curves.
 
@@ -181,6 +366,18 @@ def calcMod(Icell, Vcell, VRBD, Voc, Isc, cell_pos, Vbypass, NPT_dict,
         NPT_dict['Imod_negpts'].shape[1], 1)
     Npts = NPT_dict['Npts']
     sing_mod = {}
+    if ss_DBs:
+        ss_irr_db = ss_DBs[0]
+        ss_Id_pre_db = ss_DBs[1]
+        ss_Vd_pre_db = ss_DBs[2]
+        ss_cts_pre_db = ss_DBs[3]
+        ss_irr_ss_db = ss_DBs[4]
+        ss_Iss_db = ss_DBs[5]
+        ss_Vss_db = ss_DBs[6]
+        ss_cts_ss_db = ss_DBs[7]
+        last_index_df = ss_DBs[8]
+        last_index_ss_df = ss_DBs[9]
+        IV_res = ss_DBs[8]
     # iterate over substrings
     Isubstr, Vsubstr, Isc_substr, Imax_substr = [], [], [], []
     Isubstr_pre_bypass, Vsubstr_pre_bypass = [], []
@@ -196,24 +393,79 @@ def calcMod(Icell, Vcell, VRBD, Voc, Isc, cell_pos, Vbypass, NPT_dict,
                 sing_mod[substr_idx][ss_s_ct] = {}
                 sing_mod[substr_idx][ss_s_ct][ss_p_ct] = {}
             idxs = [r['idx'] for c in substr for r in c]
-            # t0 = time.time()
-            IatVrbd = np.asarray(
-                [np.interp(vrbd, v, i) for vrbd, v, i in
-                 zip(VRBD[idxs], Vcell[idxs], Icell[idxs])]
-            )
-            Isub, Vsub = calcSeries(
-                Icell[idxs], Vcell[idxs], Isc[idxs].mean(),
-                IatVrbd.max(), Imod_pts, Imod_negpts, Npts
-            )
+            if ss_DBs:
+                E_ss = Ee_mod[idxs]
+                E_ss.sort()
+                # If a database is used
+                if len(ss_irr_db) > 0:
+                    idx_row = find_row_index(ss_irr_db, E_ss)
+                else:
+                    idx_row = None
+                if idx_row is not None:
+                    Isub = ss_Id_pre_db[idx_row, :].astype(float)
+                    Vsub = ss_Vd_pre_db[idx_row, :].astype(float)
+                    use_DB = True
+                    if IV_trk_ct:
+                        p_ct = ss_cts_pre_db[idx_row] + 1
+                else:
+                    use_DB = False
+                    if IV_trk_ct:
+                        p_ct = 1
+                if IV_trk_ct:
+                    if len(ss_cts_pre_db) == 0:
+                        ss_cts_pre_db = np.array([p_ct])
+                    else:
+                        if idx_row is not None:
+                            ss_cts_pre_db[idx_row] = p_ct
+                        else:
+                            ss_cts_pre_db = np.vstack([ss_cts_pre_db, p_ct])
+            else:
+                use_DB = False
+            if not use_DB:
+                # t0 = time.time()
+                IatVrbd = np.asarray(
+                    [np.interp(vrbd, v, i) for vrbd, v, i in
+                     zip(VRBD[idxs], Vcell[idxs], Icell[idxs])]
+                )
+                Isub, Vsub = calcSeries(
+                    Icell[idxs], Vcell[idxs], Isc[idxs].mean(),
+                    IatVrbd.max(), Imod_pts, Imod_negpts, Npts
+                )
+                if ss_DBs:
+                    if len(ss_irr_db) == 0:
+                        ss_irr_db = np.array([E_ss.tolist()])
+                        ss_Id_pre_db = np.array([Isub.tolist()])
+                        ss_Vd_pre_db = np.array([Vsub.tolist()])
+                    else:
+                        if ss_irr_db.shape[1] < len(E_ss):
+                            zeros_column = np.zeros(
+                                (ss_irr_db.shape[0],
+                                 len(E_ss) - ss_irr_db.shape[1]
+                                 ))
+                            ss_irr_db = np.hstack((
+                                ss_irr_db, zeros_column))
+                        elif ss_irr_db.shape[1] > len(E_ss):
+                            E_ss = np.pad(E_ss,
+                                          (0,
+                                           ss_irr_db.shape[1] - len(E_ss)),
+                                          'constant')
+                        ss_irr_db = np.vstack([ss_irr_db, E_ss])
+                        ss_Id_pre_db = np.vstack([ss_Id_pre_db, Isub])
+                        ss_Vd_pre_db = np.vstack([ss_Vd_pre_db, Vsub])
             if run_cellcurr:
                 sing_mod[substr_idx][ss_s_ct]['Isubstr'] = Isub.copy()
                 sing_mod[substr_idx][ss_s_ct]['Vsubstr'] = Vsub.copy()
-                sing_mod[substr_idx][ss_s_ct][ss_p_ct]['cell_currents'] = Icell[idxs].copy()
-                sing_mod[substr_idx][ss_s_ct][ss_p_ct]['cell_voltages'] = Vcell[idxs].copy()
-                sing_mod[substr_idx][ss_s_ct][ss_p_ct]['cell_idxs'] = copy.deepcopy(
+                sing_mod[substr_idx][ss_s_ct][
+                    ss_p_ct]['cell_currents'] = Icell[idxs].copy()
+                sing_mod[substr_idx][ss_s_ct][
+                    ss_p_ct]['cell_voltages'] = Vcell[idxs].copy()
+                sing_mod[substr_idx][ss_s_ct][
+                    ss_p_ct]['cell_idxs'] = copy.deepcopy(
                     idxs)
-                sing_mod[substr_idx][ss_s_ct][ss_p_ct]['Isubstr'] = Isub.copy()
-                sing_mod[substr_idx][ss_s_ct][ss_p_ct]['Vsubstr'] = Vsub.copy()
+                sing_mod[substr_idx][ss_s_ct][
+                    ss_p_ct]['Isubstr'] = Isub.copy()
+                sing_mod[substr_idx][ss_s_ct][
+                    ss_p_ct]['Vsubstr'] = Vsub.copy()
         elif all(r['crosstie'] == True for c in substr for r in c):
             Irows, Vrows = [], []
             Isc_rows, Imax_rows = [], []
@@ -257,16 +509,68 @@ def calcMod(Icell, Vcell, VRBD, Voc, Isc, cell_pos, Vbypass, NPT_dict,
                             "First row and last rows must be crosstied."
                         )
                     elif len(idxs) > 1:
-                        IatVrbd = np.asarray(
-                            [np.interp(vrbd, v, i) for vrbd, v, i in
-                             zip(VRBD[idxs], Vcell[idxs],
-                                 Icell[idxs])]
-                        )
-                        Icol, Vcol = calcSeries(
-                            Icell[idxs], Vcell[idxs],
-                            Isc[idxs].mean(), IatVrbd.max(),
-                            Imod_pts, Imod_negpts, Npts
-                        )
+                        if ss_DBs:
+                            E_ss = Ee_mod[idxs]
+                            E_ss.sort()
+                            # If a database is used
+                            if len(ss_irr_ss_db) > 0:
+                                idx_row = find_row_index(ss_irr_ss_db, E_ss)
+                            else:
+                                idx_row = None
+                            if idx_row is not None:
+                                Icol = ss_Iss_db[idx_row, :].astype(float)
+                                Vcol = ss_Vss_db[idx_row, :].astype(float)
+                                use_DB = True
+                                if IV_trk_ct:
+                                    ss_ct = ss_cts_ss_db[idx_row] + 1
+                            else:
+                                use_DB = False
+                                if IV_trk_ct:
+                                    ss_ct = 1
+                            if IV_trk_ct:
+                                if len(ss_cts_ss_db) == 0:
+                                    ss_cts_ss_db = np.array([ss_ct])
+                                else:
+                                    if idx_row is not None:
+                                        ss_cts_ss_db[idx_row] = ss_ct
+                                    else:
+                                        ss_cts_ss_db = np.vstack(
+                                            [ss_cts_ss_db, ss_ct])
+                        else:
+                            use_DB = False
+                        if not use_DB:
+                            IatVrbd = np.asarray(
+                                [np.interp(vrbd, v, i) for vrbd, v, i in
+                                 zip(VRBD[idxs], Vcell[idxs],
+                                     Icell[idxs])]
+                            )
+                            Icol, Vcol = calcSeries(
+                                Icell[idxs], Vcell[idxs],
+                                Isc[idxs].mean(), IatVrbd.max(),
+                                Imod_pts, Imod_negpts, Npts
+                            )
+                            if ss_DBs:
+                                if len(ss_irr_ss_db) == 0:
+                                    ss_irr_ss_db = np.array([E_ss.tolist()])
+                                    ss_Iss_db = np.array([Icol.tolist()])
+                                    ss_Vss_db = np.array([Vcol.tolist()])
+                                else:
+                                    if ss_irr_ss_db.shape[1] < len(E_ss):
+                                        zeros_column = np.zeros(
+                                            (ss_irr_ss_db.shape[0],
+                                             len(E_ss) - ss_irr_ss_db.shape[1]
+                                             ))
+                                        ss_irr_ss_db = np.hstack((
+                                            ss_irr_ss_db, zeros_column))
+                                    elif ss_irr_ss_db.shape[1] > len(E_ss):
+                                        E_ss = np.pad(E_ss,
+                                                      (0,
+                                                       ss_irr_ss_db.shape[1] - len(E_ss)),
+                                                      'constant')
+                                    ss_irr_ss_db = np.vstack([ss_irr_ss_db,
+                                                              E_ss])
+                                    ss_Iss_db = np.vstack([ss_Iss_db, Icol])
+                                    ss_Vss_db = np.vstack([ss_Vss_db, Vcol])
                     else:
                         Icol = Icell[idxs]
                         Vcol = Vcell[idxs]
@@ -306,7 +610,8 @@ def calcMod(Icell, Vcell, VRBD, Voc, Isc, cell_pos, Vbypass, NPT_dict,
                         )
                         sing_mod[substr_idx][ss_s_ct]['Vsubstr'] = sub_str_data['Vrows'][ss_s_ct, :].copy(
                         )
-                        for ss_p_ct in range(sub_str_data['Iparallels'][ss_s_ct].shape[0]):
+                        for ss_p_ct in range(
+                                sub_str_data['Iparallels'][ss_s_ct].shape[0]):
                             sing_mod[substr_idx][ss_s_ct][ss_p_ct] = {}
                             sing_mod[substr_idx][ss_s_ct][ss_p_ct]['Isubstr'] = sub_str_data['Iparallels'][ss_s_ct][ss_p_ct, :].copy(
                             )
@@ -400,4 +705,9 @@ def calcMod(Icell, Vcell, VRBD, Voc, Isc, cell_pos, Vbypass, NPT_dict,
     sing_mod['Isubstr_pre_bypass'] = Isubstr_pre_bypass.copy()
     sing_mod['Vsubstr_pre_bypass'] = Vsubstr_pre_bypass.copy()
     sing_mod['bypassed_mod'] = bypassed_mod.copy()
-    return sing_mod
+
+    if ss_DBs:
+        ss_DBs = [ss_irr_db, ss_Id_pre_db, ss_Vd_pre_db, ss_cts_pre_db,
+                  ss_irr_ss_db, ss_Iss_db, ss_Vss_db, ss_cts_ss_db,
+                  last_index_df, last_index_ss_df, IV_res]
+    return sing_mod, ss_DBs
