@@ -17,7 +17,7 @@ from .circuit_comb import DEFAULT_BYPASS, MODULE_BYPASS, CUSTOM_SUBSTR_BYPASS
 
 def calcMods(cell_pos, maxmod, cell_index_map, Ee_mod, Ee_cell,
              u_cell_type, cell_type, cell_data,
-             outer_circuit, run_bpact=True, run_cellcurr=True,
+             outer_circuit, run_bpact=True, run_cellcurr=False,
              mod_DBs=None, ss_DBs=None, Ee_round=2, IV_trk_ct=True):
     """
     Generate all module IV curves and store results in a dictionary.
@@ -223,7 +223,10 @@ def calcMods(cell_pos, maxmod, cell_index_map, Ee_mod, Ee_cell,
             mean_Isc = sing_mod['Isc']
             Isubstr_pre_bypass = sing_mod['Isubstr_pre_bypass'].copy()
             Vsubstr_pre_bypass = sing_mod['Vsubstr_pre_bypass'].copy()
-            bypassed_mod = sing_mod['bypassed_mod'].copy()
+            if run_bpact:
+                bypassed_mod = sing_mod['bypassed_mod'].copy()
+            else:
+                bypassed_mod = sing_mod['bypassed_mod']
             if mod_DBs:
                 # Store results in IV database
                 # First the prms
@@ -246,18 +249,18 @@ def calcMods(cell_pos, maxmod, cell_index_map, Ee_mod, Ee_cell,
         I_mod_curves.append(np.reshape(Imod, (1, len(Imod))))
         V_mod_curves.append(np.reshape(Vmod, (1, len(Vmod))))
         P_mod_curves.append(np.reshape(Pmod, (1, len(Pmod))))
-        Isubstr_curves.append(np.reshape(
-            Isubstr, (1, Isubstr.shape[0], Isubstr.shape[1])))
-        Vsubstr_curves.append(np.reshape(
-            Vsubstr, (1, Vsubstr.shape[0], Vsubstr.shape[1])))
-        Isubstr_pre_bypass_curves.append(np.reshape(
-            Isubstr_pre_bypass,
-            (1, Isubstr_pre_bypass.shape[0],
-             Isubstr_pre_bypass.shape[1])))
-        Vsubstr_pre_bypass_curves.append(np.reshape(
-            Vsubstr_pre_bypass,
-            (1, Vsubstr_pre_bypass.shape[0],
-             Vsubstr_pre_bypass.shape[1])))
+        # Isubstr_curves.append(np.reshape(
+        #     Isubstr, (1, Isubstr.shape[0], Isubstr.shape[1])))
+        # Vsubstr_curves.append(np.reshape(
+        #     Vsubstr, (1, Vsubstr.shape[0], Vsubstr.shape[1])))
+        # Isubstr_pre_bypass_curves.append(np.reshape(
+        #     Isubstr_pre_bypass,
+        #     (1, Isubstr_pre_bypass.shape[0],
+        #      Isubstr_pre_bypass.shape[1])))
+        # Vsubstr_pre_bypass_curves.append(np.reshape(
+        #     Vsubstr_pre_bypass,
+        #     (1, Vsubstr_pre_bypass.shape[0],
+        #      Vsubstr_pre_bypass.shape[1])))
         mean_Iscs.append(mean_Isc)
         if run_bpact:
             bypassed_mod_arr.append(np.reshape(
@@ -268,12 +271,12 @@ def calcMods(cell_pos, maxmod, cell_index_map, Ee_mod, Ee_cell,
     I_mod_curves = np.concatenate(I_mod_curves, axis=0)
     V_mod_curves = np.concatenate(V_mod_curves, axis=0)
     P_mod_curves = np.concatenate(P_mod_curves, axis=0)
-    Isubstr_curves = np.concatenate(Isubstr_curves, axis=0)
-    Vsubstr_curves = np.concatenate(Vsubstr_curves, axis=0)
-    Isubstr_pre_bypass_curves = np.concatenate(Isubstr_pre_bypass_curves,
-                                               axis=0)
-    Vsubstr_pre_bypass_curves = np.concatenate(Vsubstr_pre_bypass_curves,
-                                               axis=0)
+    # Isubstr_curves = np.concatenate(Isubstr_curves, axis=0)
+    # Vsubstr_curves = np.concatenate(Vsubstr_curves, axis=0)
+    # Isubstr_pre_bypass_curves = np.concatenate(Isubstr_pre_bypass_curves,
+    #                                            axis=0)
+    # Vsubstr_pre_bypass_curves = np.concatenate(Vsubstr_pre_bypass_curves,
+    #                                            axis=0)
     mean_Iscs = np.array(mean_Iscs)
     if run_bpact:
         bypassed_mod_arr = np.concatenate(bypassed_mod_arr, axis=0)
@@ -704,10 +707,228 @@ def calcMod(Ee_mod, Icell, Vcell, VRBD, Voc, Isc, cell_pos, Vbypass,
     sing_mod['Isc'] = Isc.mean()
     sing_mod['Isubstr_pre_bypass'] = Isubstr_pre_bypass.copy()
     sing_mod['Vsubstr_pre_bypass'] = Vsubstr_pre_bypass.copy()
-    sing_mod['bypassed_mod'] = bypassed_mod.copy()
+    if run_bpact:
+        sing_mod['bypassed_mod'] = bypassed_mod.copy()
+    else:
+        sing_mod['bypassed_mod'] = bypassed_mod
 
     if ss_DBs:
         ss_DBs = [ss_irr_db, ss_Id_pre_db, ss_Vd_pre_db, ss_cts_pre_db,
                   ss_irr_ss_db, ss_Iss_db, ss_Vss_db, ss_cts_ss_db,
                   last_index_df, last_index_ss_df, IV_res]
     return sing_mod, ss_DBs
+
+
+def calcsubMods(cell_pos, maxmod, cell_index_map, Ee_mod,
+                Ee_cell, u_cell_type, cell_type, cell_data):
+    """
+    Generate all sub-module IV curves and store results in a dictionary.
+
+    Parameters
+    ----------
+    cell_pos : dict
+        cell position pattern from pvmismatch package.
+    maxmod : pvmodule object
+        pvmodule class from pvmismatch package.
+    cell_index_map : numpy.ndarray
+        2-D array specifying the physical cell positions in the module.
+    Ee_mod : numpy.ndarray
+        3-D array containing the Irradiance at the cell level for all modules.
+    Ee_cell : numpy.ndarray
+        1-D array containing irradiances in suns.
+    u_cell_type : list
+        List of cell types at each irradiance setting.
+    cell_type : numpy.ndarray
+        2-D array of cell types for each cell in each module.
+    cell_data : dict
+        Dictionary containing cell IV curves.
+
+    Returns
+    -------
+    mod_data : dict
+        Dictionary containing module IV curves.
+
+    """
+    Vbypass = maxmod.Vbypass
+    Isubstr_curves = []
+    Vsubstr_curves = []
+    mean_Iscs = []
+    for idx_mod in range(Ee_mod.shape[0]):
+        # 1 Module
+        cell_ids = cell_index_map.flatten()
+        idx_sort = np.argsort(cell_ids)
+        Ee_mod1 = Ee_mod[idx_mod].flatten()[idx_sort]
+        cell_type1 = cell_type.flatten()[idx_sort]
+        # Extract cell IV curves
+        mod_in_cell = np.where(
+            np.in1d(Ee_cell+u_cell_type, Ee_mod1+cell_type1))[0]
+        Icell_red = cell_data['Icell'][mod_in_cell, :]
+        Vcell_red = cell_data['Vcell'][mod_in_cell, :]
+        Vrbd_red = cell_data['VRBD'][mod_in_cell]
+        Voc_red = cell_data['Voc'][mod_in_cell]
+        Isc_red = cell_data['Isc'][mod_in_cell]
+        u, inverse, counts = np.unique(Ee_mod1+cell_type1, return_inverse=True,
+                                       return_counts=True)
+        # Expand for Mod curves
+        Icell = Icell_red[inverse, :]
+        Vcell = Vcell_red[inverse, :]
+        VRBD = Vrbd_red[inverse]
+        Voc = Voc_red[inverse]
+        Isc = Isc_red[inverse]
+        NPT_dict = cell_data['NPT']
+        # Run Module Circuit model
+        Isubstr, Vsubstr, Psubstr, mean_Isc = calcsubMod(Icell, Vcell, VRBD,
+                                                         Voc, Isc, cell_pos,
+                                                         Vbypass, NPT_dict)
+        Isubstr_curves.append(np.reshape(
+            Isubstr, (1, Isubstr.shape[0], Isubstr.shape[1])))
+        Vsubstr_curves.append(np.reshape(
+            Vsubstr, (1, Vsubstr.shape[0], Vsubstr.shape[1])))
+        mean_Iscs.append(mean_Isc)
+    Isubstr_curves = np.concatenate(Isubstr_curves, axis=0)
+    Vsubstr_curves = np.concatenate(Vsubstr_curves, axis=0)
+    Psubstr_curves = Vsubstr_curves * Isubstr_curves
+    mean_Iscs = np.array(mean_Iscs)
+
+    # Store results in a dict
+    mod_data = dict()
+    mod_data['Isubstr'] = Isubstr_curves
+    mod_data['Vsubstr'] = Vsubstr_curves
+    mod_data['Psubstr'] = Psubstr_curves
+    mod_data['mean_Isc'] = np.reshape(mean_Iscs, (len(mean_Iscs), 1))
+    mod_data['Imp'] = np.zeros((Isubstr_curves.shape[0], 1))
+    mod_data['Vmp'] = np.zeros((Isubstr_curves.shape[0], 1))
+    mod_data['Pmp'] = np.zeros((Isubstr_curves.shape[0], 1))
+    mod_data['Isc'] = np.zeros((Isubstr_curves.shape[0], 1))
+    mod_data['Voc'] = np.zeros((Isubstr_curves.shape[0], 1))
+    mod_data['FF'] = np.zeros((Isubstr_curves.shape[0], 1))
+
+    return mod_data
+
+
+def calcsubMod(Icell, Vcell, VRBD, Voc, Isc, cell_pos, Vbypass, NPT_dict):
+    """
+    Calculate module I-V curves.
+
+    Returns module currents [A], voltages [V] and powers [W]
+    """
+    # Extract Npt data
+    pts = NPT_dict['pts'][0, :].reshape(NPT_dict['pts'].shape[1], 1)
+    negpts = NPT_dict['negpts'][0, :].reshape(NPT_dict['negpts'].shape[1], 1)
+    Imod_pts = NPT_dict['Imod_pts'][0, :].reshape(
+        NPT_dict['Imod_pts'].shape[1], 1)
+    Imod_negpts = NPT_dict['Imod_negpts'][0, :].reshape(
+        NPT_dict['Imod_negpts'].shape[1], 1)
+    Npts = NPT_dict['Npts']
+    # iterate over substrings
+    Isubstr, Vsubstr, Isc_substr, Imax_substr = [], [], [], []
+    for substr_idx, substr in enumerate(cell_pos):
+        # check if cells are in series or any crosstied circuits
+        if all(r['crosstie'] == False for c in substr for r in c):
+            idxs = [r['idx'] for c in substr for r in c]
+            # t0 = time.time()
+            IatVrbd = np.asarray(
+                [np.interp(vrbd, v, i) for vrbd, v, i in
+                 zip(VRBD[idxs], Vcell[idxs], Icell[idxs])]
+            )
+            Isub, Vsub = calcSeries(
+                Icell[idxs], Vcell[idxs], Isc[idxs].mean(),
+                IatVrbd.max(), Imod_pts, Imod_negpts, Npts
+            )
+        elif all(r['crosstie'] == True for c in substr for r in c):
+            Irows, Vrows = [], []
+            Isc_rows, Imax_rows = [], []
+            for row in zip(*substr):
+                idxs = [c['idx'] for c in row]
+                Irow, Vrow = calcParallel(
+                    Icell[idxs], Vcell[idxs],
+                    Voc[idxs].max(), VRBD.min(), negpts, pts, Npts
+                )
+                Irows.append(Irow)
+                Vrows.append(Vrow)
+                Isc_rows.append(np.interp(np.float64(0), Vrow, Irow))
+                Imax_rows.append(Irow.max())
+            Irows, Vrows = np.asarray(Irows), np.asarray(Vrows)
+            Isc_rows = np.asarray(Isc_rows)
+            Imax_rows = np.asarray(Imax_rows)
+            Isub, Vsub = calcSeries(
+                Irows, Vrows, Isc_rows.mean(), Imax_rows.max(),
+                Imod_pts, Imod_negpts, Npts
+            )
+        else:
+            IVall_cols = []
+            prev_col = None
+            IVprev_cols = []
+            for col in substr:
+                IVcols = []
+                is_first = True
+                # combine series between crossties
+                for idxs in pvconstants.get_series_cells(col, prev_col):
+                    if not idxs:
+                        # first row should always be empty since it must be
+                        # crosstied
+                        is_first = False
+                        continue
+                    elif is_first:
+                        raise Exception(
+                            "First row and last rows must be crosstied."
+                        )
+                    elif len(idxs) > 1:
+                        IatVrbd = np.asarray(
+                            [np.interp(vrbd, v, i) for vrbd, v, i in
+                             zip(VRBD[idxs], Vcell[idxs],
+                                 Icell[idxs])]
+                        )
+                        Icol, Vcol = calcSeries(
+                            Icell[idxs], Vcell[idxs],
+                            Isc[idxs].mean(), IatVrbd.max(),
+                            Imod_pts, Imod_negpts, Npts
+                        )
+                    else:
+                        Icol, Vcol = Icell[idxs], Vcell[idxs]
+                    IVcols.append([Icol, Vcol])
+                # append IVcols and continue
+                IVprev_cols.append(IVcols)
+                if prev_col:
+                    # if circuits are same in both columns then continue
+                    if not all(icol['crosstie'] == jcol['crosstie']
+                               for icol, jcol in zip(prev_col, col)):
+                        # combine crosstied circuits
+                        Iparallel, Vparallel, _ = combine_parallel_circuits(
+                            IVprev_cols, pvconstants,
+                            negpts, pts, Imod_pts, Imod_negpts, Npts
+                        )
+                        IVall_cols.append([Iparallel, Vparallel])
+                        # reset prev_col
+                        prev_col = None
+                        IVprev_cols = []
+                        continue
+                # set prev_col and continue
+                prev_col = col
+            # combine any remaining crosstied circuits in substring
+            if not IVall_cols:
+                # combine crosstied circuits
+                Isub, Vsub, _ = combine_parallel_circuits(
+                    IVprev_cols, pvconstants,
+                    negpts, pts, Imod_pts, Imod_negpts, Npts
+                )
+            else:
+                Iparallel, Vparallel = zip(*IVall_cols)
+                Iparallel = np.asarray(Iparallel)
+                Vparallel = np.asarray(Vparallel)
+                Isub, Vsub = calcParallel(
+                    Iparallel, Vparallel, Vparallel.max(), Vparallel.min(),
+                    negpts, pts, Npts
+                )
+
+        Isubstr.append(Isub)
+        Vsubstr.append(Vsub)
+        Isc_substr.append(np.interp(np.float64(0), Vsub, Isub))
+        Imax_substr.append(Isub.max())
+
+    Isubstr, Vsubstr = np.asarray(Isubstr), np.asarray(Vsubstr)
+    Isc_substr = np.asarray(Isc_substr)
+    Imax_substr = np.asarray(Imax_substr)
+
+    Psubstr = Isubstr * Vsubstr
+    return Isubstr, Vsubstr, Psubstr, Isc.mean()

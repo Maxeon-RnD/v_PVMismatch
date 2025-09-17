@@ -213,7 +213,7 @@ def calcParallel_with_bypass(Curr, V, Vmax, Vmin, negpts, pts, npts,
 
 def combine_parallel_circuits(IVprev_cols, pvconst,
                               negpts, pts, Imod_pts, Imod_negpts, npts,
-                              idxsprev_cols):
+                              idxsprev_cols=None):
     """
     Combine crosstied circuits in a substring.
 
@@ -239,11 +239,12 @@ def combine_parallel_circuits(IVprev_cols, pvconst,
         Isc_rows.append(np.interp(np.float64(0), Vrow, Irow))
         Imax_rows.append(Irow.max())
     idx_rows, idx_parallels = [], []
-    for idxcols in zip(*idxsprev_cols):
-        idx_parallel = np.stack(idxcols, axis=0)
-        idx_parallel = np.asarray(idx_parallel)
-        idx_parallels.append(idx_parallel)
-        idx_rows.append(idx_parallel)
+    if idxsprev_cols:
+        for idxcols in zip(*idxsprev_cols):
+            idx_parallel = np.stack(idxcols, axis=0)
+            idx_parallel = np.asarray(idx_parallel)
+            idx_parallels.append(idx_parallel)
+            idx_rows.append(idx_parallel)
     # idx_rows = np.stack(idx_rows, axis=0)
     Irows, Vrows = np.asarray(Irows), np.asarray(Vrows)
     Isc_rows = np.asarray(Isc_rows)

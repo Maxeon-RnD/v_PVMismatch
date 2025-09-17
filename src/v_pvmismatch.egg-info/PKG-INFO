@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: v_pvmismatch
-Version: 0.2.1
+Version: 0.2.3
 Summary: Vectorized PVMismatch (v_PVMismatch) Package.
 Author-email: Kiran Balasubramanian <kiran.balasubramanian@maxeon.com>
 Maintainer-email: Kiran Balasubramanian <kiran.balasubramanian@maxeon.com>

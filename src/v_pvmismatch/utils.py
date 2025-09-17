@@ -387,6 +387,86 @@ def calcMPP_IscVocFFBPD(Isys, Vsys, Psys, bypassed_mod_arr,
     return Imp, Vmp, Pmp, Isc, Voc, FF, BpDmp, num_bpd_active
 
 
+def calcMPP_IscVocFF(Isys, Vsys, Psys):
+    """
+    Calculate MPP IV parameters. This method is vectorized.
+
+    Parameters
+    ----------
+    Isys : np.ndarray
+        2-D array of current curves.
+    Vsys : np.ndarray
+        2-D array of voltage curves.
+    Psys : np.ndarray
+        2-D array of power curves.
+    bypassed_mod_arr : np.ndarray
+        3-D or 5-D arr of bypass diode act curves for substring in mod of sys.
+    run_bpact : bool, optional
+        Flag to run bypass diode activation logic. The default is True.
+    run_annual : bool, optional
+        Flag to delete large bypass diode act arr in case of annual sim.
+        The default is False.
+
+    Returns
+    -------
+    Imp : np.ndarray
+        1-D array of Imp.
+    Vmp : np.ndarray
+        1-D array of Vmp.
+    Pmp : np.ndarray
+        1-D array of Pmp.
+    Isc : np.ndarray
+        1-D array of Isc.
+    Voc : np.ndarray
+        1-D array of Voc.
+    FF : np.ndarray
+        1-D array of FF.
+    BpDmp : np.ndarray
+        Bypass diode activation at MPP for substr in each mod of the system.
+    num_bpd_active : np.ndarray
+        1-D array of number of bypass diodes active.
+
+    """
+    rev_P = Psys[:, ::-1]
+    mpp = rev_P.shape[1] - np.argmax(rev_P, axis=1) - 1
+    check_max_idx = (mpp == rev_P.shape[1]-1)
+    mpp[check_max_idx] = rev_P.shape[1] - 2
+    mpp = np.reshape(mpp, (len(mpp), 1))
+    mpp_lohi = np.concatenate([mpp-1, mpp, mpp+1], axis=1)
+    mpp_row = np.reshape(np.arange(Psys.shape[0]), (Psys.shape[0], 1))
+    P = Psys[mpp_row, mpp_lohi]
+    V = Vsys[mpp_row, mpp_lohi]
+    Icurr = Isys[mpp_row, mpp_lohi]
+    # calculate derivative dP/dV using central difference
+    dP = np.diff(P, axis=1)  # size is (2, 1)
+    dV = np.diff(V, axis=1)  # size is (2, 1)
+    Pv = dP / dV  # size is (2, 1)
+    # dP/dV is central difference at midpoints,
+    Vmid = (V[:, 1:] + V[:, :-1]) / 2.0  # size is (2, 1)
+    Imid = (Icurr[:, 1:] + Icurr[:, :-1]) / 2.0  # size is (2, 1)
+    # interpolate to find Vmp
+    Vmp = (-Pv[:, 0].flatten() * np.diff(Vmid, axis=1).flatten() /
+           np.diff(Pv, axis=1).flatten() + Vmid[:, 0])
+    Imp = (-Pv[:, 0].flatten() * np.diff(Imid, axis=1).flatten() /
+           np.diff(Pv, axis=1).flatten() + Imid[:, 0])
+    # calculate max power at Pv = 0
+    Pmp = Imp * Vmp
+    # calculate Voc, current must be increasing so flipup()
+    Voc = np.zeros(Pmp.shape)
+    Isc = np.zeros(Pmp.shape)
+    for idx_time in range(Psys.shape[0]):
+        # Only interpolate if Current data is non-zero
+        if Vsys[idx_time, :].nonzero()[0].size != 0:
+            Voc[idx_time] = np.interp(np.float64(0),
+                                      np.flipud(Isys[idx_time, :]),
+                                      np.flipud(Vsys[idx_time, :]))
+            Isc[idx_time] = np.interp(np.float64(
+                0), Vsys[idx_time, :], Isys[idx_time, :])  # calculate Isc
+    FF = Pmp / Isc / Voc
+
+    return Imp, Vmp, Pmp, Isc, Voc, FF
+
+
 def round_to_dec(vector, val):
     """
     Round to nearest value or number. Example 2.03, 0.02 becomes 2.02.
@@ -469,6 +549,10 @@ def find_row_index(array_2d, array_1d):
     elif array_2d.shape[1] > len(array_1d):
         array_1d = np.pad(array_1d, (0, array_2d.shape[1] - len(array_1d)),
                           'constant')
-    comparison = array_2d == array_1d
-    row_indices = np.where(np.all(comparison, axis=1))[0]
-    return row_indices[0] if row_indices.size > 0 else None
+    for col_idx in range(len(array_1d)):
+        if col_idx == 0:
+            mask = (array_2d[:, col_idx] == array_1d[col_idx])
+        else:
+            mask = mask & (array_2d[:, col_idx] == array_1d[col_idx])
+    row_indices = np.where(mask)
+    return row_indices[0][0] if row_indices[0].size > 0 else None
