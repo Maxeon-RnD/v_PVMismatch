@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """Vectorized two diode model."""
 
+import os
+
 import numpy as np
 import pandas as pd
 from scipy import constants
+
 from .pvmismatch import pvconstants, pvcell
-from .utils import round_to_dec
+from .utils import save_pickle
 
 # ----------------------------------------------------------------------------
 # TWO DIODE MODEL ------------------------------------------------------------
@@ -23,7 +26,8 @@ CELLAREA = np.float64(153.33)  # [cm^2] cell area
 
 
 def two_diode_model(pvcs, Ee, u_cell_type, Tcell, NPTS=200, NPTS_cell=100,
-                    use_cell_NPT=False, cell_DBs=None, Ee_round=2):
+                    use_cell_NPT=False, fname_pre='cell_data',
+                    res_path=None):
     """
     Estimate IV curve using the two diode model native to pvmismatch.
 
@@ -44,26 +48,30 @@ def two_diode_model(pvcs, Ee, u_cell_type, Tcell, NPTS=200, NPTS_cell=100,
         Number of points in cell IV curve. The default is 100.
     use_cell_NPT : bool, optional
         Turn on this if cell IV curves use 'NPTS_cell'. The default is False.
+    fname_pre : str, optional
+        Pre-pend string for file name. The default is 'cell_data'.
+    res_path : str, optional
+        Folder where data will be stored. The default is None.
+        If None, store data in cwd.
 
     Returns
     -------
-    cell_data : dict
-        Dictionary containing cell IV curves.
+    None.
 
     """
+    # If res_path is None, store results in cwd
+    if res_path is None:
+        res_path = os.getcwd()
     # Generate NPTs
     pts, negpts, Imod_pts, Imod_negpts = NPTS_f(
         NPTS, np.repeat(Ee[:, np.newaxis], NPTS, axis=1).shape)
     if not use_cell_NPT:
         NPTS_cell = NPTS
 
-    Icell_vec = np.zeros((len(Ee), NPTS_cell*3))
-    Vcell_vec = Icell_vec.copy()
-    Pcell_vec = Icell_vec.copy()
-    VRBD_vec = np.zeros((len(Ee), 1))
-    Voc_vec = VRBD_vec.copy()
-    Isc_vec = VRBD_vec.copy()
     for ie, ee in enumerate(Ee):
+        fname = '_'.join([fname_pre, str(ie)]) + '.pickle'
+        fpath = os.path.join(res_path, fname)
+        subcell_data = {}
         uct = int(u_cell_type[ie])
         pvc = pvcs[uct]
         # Define cell parameters
@@ -94,29 +102,26 @@ def two_diode_model(pvcs, Ee, u_cell_type, Tcell, NPTS=200, NPTS_cell=100,
                             alpha_Isc=alpha_Isc)
         pvc.Ee = ee
         pvc.Tcell = Tcell[ie]
-        Icell_vec[ie, :] = pvc.Icell.flatten()
-        Vcell_vec[ie, :] = pvc.Vcell.flatten()
-        Pcell_vec[ie, :] = pvc.Pcell.flatten()
-        VRBD_vec[ie, 0] = pvc.VRBD
-        Voc_vec[ie, 0] = pvc.Voc
-        Isc_vec[ie, 0] = pvc.Isc
 
-    # Store in a dict
-    cell_data = dict()
-    cell_data['Icell'] = Icell_vec
-    cell_data['Vcell'] = Vcell_vec
-    cell_data['Pcell'] = Pcell_vec
-    cell_data['VRBD'] = VRBD_vec
-    cell_data['Voc'] = Voc_vec
-    cell_data['Isc'] = Isc_vec
-    cell_data['NPT'] = dict()
-    cell_data['NPT']['pts'] = pts
-    cell_data['NPT']['negpts'] = negpts
-    cell_data['NPT']['Imod_pts'] = Imod_pts
-    cell_data['NPT']['Imod_negpts'] = Imod_negpts
-    cell_data['NPT']['Npts'] = NPTS
-
-    return cell_data
+        # Store in a dict
+        subcell_data['Icell'] = pvc.Icell.flatten()
+        subcell_data['Vcell'] = pvc.Vcell.flatten()
+        subcell_data['Pcell'] = pvc.Pcell.flatten()
+        subcell_data['VRBD'] = pvc.VRBD
+        subcell_data['Voc'] = pvc.Voc
+        subcell_data['Isc'] = pvc.Isc
+        # Save results
+        save_pickle(fpath, subcell_data)
+    NPT_fname = 'NPT_dict.pickle'
+    NPT_fpath = os.path.join(res_path, NPT_fname)
+    NPT_dict = dict()
+    NPT_dict['pts'] = pts
+    NPT_dict['negpts'] = negpts
+    NPT_dict['Imod_pts'] = Imod_pts
+    NPT_dict['Imod_negpts'] = Imod_negpts
+    NPT_dict['Npts'] = NPTS
+    # Save NPTS data
+    save_pickle(NPT_fpath, NPT_dict)
 
 
 def NPTS_f(Npts=200, vec_shape=(1, 1, 1, 1)):

@@ -19,45 +19,35 @@ MODSIZES = [24, 72, 96, 128]  # list of possible number of cells per module
 NUMBERCELLS = MODSIZES[2]  # default is 96-cell module
 NUMBERMODS = 10  # default number of modules
 NUMBERSTRS = 10  # default number of strings
+
 EPS = np.finfo(np.float64).eps
 
 
 def npinterpx(x, xp, fp):
     """
-    Numpy interpolation function with linear extrapolation.
-
-    Parameters
-    ----------
-    x : array_like
-        The x-coordinates of the interpolated values.
-
-    xp : 1-D sequence of floats
-        The x-coordinates of the data points, must be increasing.
-
-    fp : 1-D sequence of floats
-        The y-coordinates of the data points, same length as `xp`.
-
-    Returns
-    -------
-    y : {float, ndarray}
-        The interpolated values, same shape as `x`.
-
-    Raises
-    ------
-    ValueError
-        If `xp` and `fp` have different length
+    Numpy interpolation with linear extrapolation on both ends.
+    - x, xp, fp: 1-D float64 arrays
+    - xp must be increasing
     """
+    # Interior interpolation (constant ends inside np.interp)
     y = np.interp(x, xp, fp)
-    # extrapolate left
-    left = x < xp[0]
-    xleft = x[left]
-    yleft = fp[0] + (xleft - xp[0]) / (xp[1] - xp[0]) * (fp[1] - fp[0])
-    y[left] = yleft
-    # extrapolate right
-    right = x > xp[-1]
-    xright = x[right]
-    yright = fp[-1] + (xright - xp[-1]) / (xp[-2] - xp[-1]) * (fp[-2] - fp[-1])
-    y[right] = yright
+
+    # Precompute slopes at left/right ends once
+    sL = (fp[1] - fp[0]) / (xp[1] - xp[0] + EPS)
+    sR = (fp[-1] - fp[-2]) / (xp[-1] - xp[-2] + EPS)
+
+    # Left extrapolation
+    left_mask = (x < xp[0])
+    if left_mask.any():
+        xleft = x[left_mask]
+        y[left_mask] = fp[0] + (xleft - xp[0]) * sL
+
+    # Right extrapolation
+    right_mask = (x > xp[-1])
+    if right_mask.any():
+        xright = x[right_mask]
+        y[right_mask] = fp[-1] + (xright - xp[-1]) * sR
+
     return y
 
 

@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 """Vectorized pvstring."""
 
-import copy
+import os
+import pickle
+from typing import Dict, Any, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
-from .utils import isin_nd
 from .circuit_comb import calcSeries_with_bypass
+from .utils import row_void_view_1d, save_pickle
 
 
-def calcStrings(Ee_str, Ee_mod, mod_data, NPT_dict,
-                run_bpact=True, run_annual=False, run_cellcurr=True):
+def calcStrings(Ee_str, Tcell_str, Ee_mod, Tcell_mod, NPT_dict,
+                run_bpact=True, run_annual=False, run_cellcurr=True,
+                res_path=None, mfname_pre='mod_data', stfname_pre='str_data'):
     """
     Generate all string IV curves and store results in a dictionary.
 
@@ -36,88 +40,357 @@ def calcStrings(Ee_str, Ee_mod, mod_data, NPT_dict,
         Dictionary containing string IV curves.
 
     """
-    I_str_curves = []
-    V_str_curves = []
-    P_str_curves = []
-    Bypass_str_curves = []
-    if run_cellcurr:
-        full_data = []
+    # If res_path is None, store results in cwd
+    if res_path is None:
+        res_path = os.getcwd()
+    # Precompute once after Ee_mod/Tcell_mod are ready (hoisted)
+    pre_mod_idx = prepare_global_module_key_index(
+        Ee_mod, Tcell_mod, round_decimals=None)  # tune rounding as needed
+
+    Imod_pts = NPT_dict['Imod_pts'][0, :].reshape(
+        NPT_dict['Imod_pts'].shape[1], 1)
+    Imod_negpts = NPT_dict['Imod_negpts'][0, :].reshape(
+        NPT_dict['Imod_negpts'].shape[1], 1)
+    Npts = NPT_dict['Npts']
     for idx_str in range(Ee_str.shape[0]):
         if run_cellcurr:
             sing_str = {}
 
         # 1 String
         Ee_str1 = Ee_str[idx_str]
-        # Extract mod IV curves
-        str_in_mod = isin_nd(Ee_mod, Ee_str1)
-        Imod_red = mod_data['Imod'][str_in_mod, :]
-        Vmod_red = mod_data['Vmod'][str_in_mod, :]
-        meanIsc_red = mod_data['mean_Isc'][str_in_mod]
-        if run_bpact:
-            Bypassed_substr_red = mod_data['Bypassed_substr'][str_in_mod, :, :]
-        else:
-            Bypassed_substr_red = np.nan
-        u, inverse, counts = np.unique(Ee_str1, axis=0, return_inverse=True,
-                                       return_counts=True)
-        # Expand for Str curves
-        Imod = Imod_red[inverse, :]
-        Vmod = Vmod_red[inverse, :]
-        meanIsc = meanIsc_red[inverse]
+        Tcell_str1 = Tcell_str[idx_str]
+        Imod, Vmod, meanIsc, _, _, _, _, _, Bypassed_substr, _, _, Mod_idxs = \
+            extract_string_module_curves_pair_aware_from_pickles(
+                Ee_str1=Ee_str1,
+                Tcell_str1=Tcell_str1,
+                pre_mod_idx=pre_mod_idx,
+                res_path=res_path, mfname_pre=mfname_pre,
+                run_bpact=run_bpact
+            )
         if run_cellcurr:
             sing_str['Imods'] = Imod.copy()
             sing_str['Vmods'] = Vmod.copy()
-            sing_str['Mod_idxs'] = str_in_mod[inverse].copy()
-        if run_bpact:
-            Bypassed_substr = Bypassed_substr_red[inverse, :, :]
-        else:
-            Bypassed_substr = np.nan
-        Imod_pts = NPT_dict['Imod_pts'][0, :].reshape(
-            NPT_dict['Imod_pts'].shape[1], 1)
-        Imod_negpts = NPT_dict['Imod_negpts'][0, :].reshape(
-            NPT_dict['Imod_negpts'].shape[1], 1)
-        Npts = NPT_dict['Npts']
+            sing_str['Mod_idxs'] = Mod_idxs
         # Run String Circuit model
         Istring, Vstring, bypassed_str = calcSeries_with_bypass(
             Imod, Vmod, meanIsc.mean(), Imod.max(), Imod_pts, Imod_negpts,
             Npts, Bypassed_substr, run_bpact=run_bpact)
         Pstring = Istring * Vstring
-        # If it is an annual simulation, delete the bypassed related variables
-        if run_annual:
-            del Bypassed_substr_red
-            del Bypassed_substr
-
-        I_str_curves.append(np.reshape(Istring, (1, len(Istring))))
-        V_str_curves.append(np.reshape(Vstring, (1, len(Vstring))))
-        P_str_curves.append(np.reshape(Pstring, (1, len(Pstring))))
-        if run_bpact:
-            Bypass_str_curves.append(np.reshape(bypassed_str,
-                                                (1,
-                                                 bypassed_str.shape[0],
-                                                 bypassed_str.shape[1],
-                                                 bypassed_str.shape[2])))
-        else:
-            Bypass_str_curves.append(bypassed_str)
+        # Store results in a dict
+        str_data = dict()
+        str_data['Istring'] = Istring
+        str_data['Vstring'] = Vstring
+        str_data['Pstring'] = Pstring
+        str_data['Bypassed_substr'] = bypassed_str
         if run_cellcurr:
-            full_data.append(sing_str)
+            str_data['full_data'] = sing_str
+        # Save results to pickle
+        fname = '_'.join([stfname_pre, str(idx_str)]) + '.pickle'
+        fpath = os.path.join(res_path, fname)
+        save_pickle(fpath, str_data)
 
-    I_str_curves = np.concatenate(I_str_curves, axis=0)
-    V_str_curves = np.concatenate(V_str_curves, axis=0)
-    P_str_curves = np.concatenate(P_str_curves, axis=0)
-    if run_bpact:
-        Bypass_str_curves = np.concatenate(Bypass_str_curves, axis=0)
+
+def prepare_global_module_key_index(Ee_mod, Tcell_mod, round_decimals=None):
+    K_mod, cellX, cellY = Ee_mod.shape
+    M = cellX * cellY
+
+    Ee_flat = Ee_mod.reshape(K_mod, M)
+    T_flat = Tcell_mod.reshape(K_mod, M)
+
+    if round_decimals is not None:
+        Ee_flat = np.round(Ee_flat, round_decimals)
+        T_flat = np.round(T_flat, round_decimals)
+
+    rows = np.concatenate([Ee_flat, T_flat], axis=1)  # (K_mod, 2*M)
+
+    # --- FIX: make a 1-D void view and sort it ---
+    row_void_1d = row_void_view_1d(rows)             # shape: (K_mod,)
+    order = np.argsort(row_void_1d)                  # indices into row_void_1d
+    rows_void_sorted = row_void_1d[order]            # 1-D sorted void array
+
+    return {
+        'M': M,
+        'order': order,
+        'rows_void_sorted': rows_void_sorted,
+        'round_decimals': round_decimals,
+    }
+
+
+def extract_string_module_curves_pair_aware_from_pickles(
+    Ee_str1: np.ndarray,
+    Tcell_str1: np.ndarray,
+    pre_mod_idx: Dict[str, Any],
+    res_path: str,
+    mfname_pre: str,
+    run_bpact: bool = True,
+    row_cache: Optional[Dict[int, Dict[str, Any]]] = None,
+    num_workers: int = 0,
+    strict_shapes: bool = True,
+) -> Tuple[
+    np.ndarray,                # Imod: (S, Npts)
+    np.ndarray,                # Vmod: (S, Npts)
+    np.ndarray,                # meanIsc: (S,)
+    Optional[np.ndarray],      # BpDmp_exp: (S, *B_shape) or None
+    np.ndarray,                # Mod_idxs: (S,)
+    np.ndarray,                # Pmp: (S,)
+    np.ndarray,                # Imp: (S,)
+    np.ndarray,                # Vmp: (S,)
+    np.ndarray,                # Isc: (S,)
+    # num_bpd_active_exp: (S,) or None if run_bpact=False
+    Optional[np.ndarray],
+    np.ndarray,                # counts: (U,), counts of unique local rows
+    # inverse: (S,), mapping from unique rows back to S rows
+    np.ndarray,
+]:
+    """
+    Vectorized module-curve extraction for strings using precomputed global
+    module index, reading sharded `mod_data` per-row pickle files from disk.
+
+    Each row pickle must be named: f"{mfname_pre}_{row_idx}.pickle" in
+    `res_path`.
+
+    Required keys per row:
+      - Curves:  'Imod' (Npts,), 'Vmod' (Npts,)
+      - Scalars: 'Isc', 'Pmp', 'Imp', 'Vmp', 'Isc'
+      - If run_bpact=True: 'num_bpd_active' (scalar), 'bypassed_mod'
+      (ndarray with consistent shape)
+
+    Returns
+    -------
+    (Imod, Vmod, meanIsc, BpDmp_exp, Mod_idxs, Pmp, Imp, Vmp, Isc,
+     num_bpd_active_exp, counts, inverse)
+    All expanded to (S, ...) where S is the number of string rows, except:
+      - counts: (U,), for U unique local rows
+      - inverse: (S,), mapping from unique rows to S rows
+    """
+    # ------------------------------
+    # 1) Unpack precomputed indexing
+    # ------------------------------
+    M = pre_mod_idx['M']
+    order = pre_mod_idx['order']
+    rows_void_sorted = pre_mod_idx['rows_void_sorted']
+    round_decimals = pre_mod_idx.get('round_decimals', None)
+
+    # ------------------------------
+    # 2) Flatten string layout to (S, M) for Ee/T
+    # ------------------------------
+    S = Ee_str1.shape[0]
+    Ee_flat = Ee_str1.reshape(S, M)
+    T_flat = Tcell_str1.reshape(S, M)
+
+    if round_decimals is not None:
+        Ee_flat = np.round(Ee_flat, round_decimals)
+        T_flat = np.round(T_flat, round_decimals)
+
+    # Concatenate along columns to form (S, 2*M) row signature per string row
+    str_rows = np.concatenate([Ee_flat, T_flat], axis=1)  # (S, 2*M)
+
+    # ------------------------------
+    # 3) Unique local rows + inverse to expand back
+    # ------------------------------
+    u_str_rows, inverse, counts = np.unique(
+        str_rows, axis=0, return_inverse=True, return_counts=True
+    )
+
+    # ------------------------------
+    # 4) 1-D void view for vectorized binary search
+    # ------------------------------
+    u_void = row_void_view_1d(u_str_rows)  # shape: (U,)
+
+    pos = np.searchsorted(rows_void_sorted, u_void)  # (U,)
+    valid = (pos >= 0) & (pos < rows_void_sorted.size) & (
+        rows_void_sorted[pos] == u_void)
+    if not np.all(valid):
+        bad = np.where(~valid)[0]
+        sample = bad[:10].tolist()
+        raise ValueError(
+            f"String module keys not found in global unique modules (example indices: {sample}). "
+            f"Ensure identical rounding policy (round_decimals={round_decimals})."
+        )
+
+    # ------------------------------
+    # 5) Map positions to global row indices (== per-row pickle suffixes)
+    # ------------------------------
+    mod_idxs_unique = order[pos]            # (U,)
+    Mod_idxs = mod_idxs_unique[inverse]     # (S,)
+
+    # ------------------------------
+    # 6) Load only the unique rows from disk
+    # ------------------------------
+    unique_rows = np.unique(mod_idxs_unique)
+    cache = row_cache if row_cache is not None else {}
+
+    def _row_file_path(row_idx: int) -> str:
+        return os.path.join(res_path, f"{mfname_pre}_{int(row_idx)}.pickle")
+
+    def _to_1d(arr: np.ndarray, what: str, fpath: str) -> np.ndarray:
+        arr = np.asarray(arr)
+        if arr.ndim == 1:
+            return arr
+        if arr.ndim == 2 and 1 in arr.shape:
+            return arr.reshape(-1)
+        if strict_shapes:
+            raise ValueError(
+                f"Inconsistent shape for {what} in '{fpath}': {arr.shape}. "
+                f"Expected 1-D (Npts,) or a singleton-2D."
+            )
+        return arr.reshape(-1)
+
+    def _to_scalar(x: Any, what: str, fpath: str):
+        if np.isscalar(x):
+            return x
+        if isinstance(x, np.ndarray):
+            if x.size == 1:
+                return x.reshape(()).item()
+            if strict_shapes:
+                raise ValueError(
+                    f"Expected scalar for {what} in '{fpath}', got shape {x.shape}.")
+            return np.asarray(x).reshape(-1)[0]
+        if strict_shapes:
+            raise ValueError(
+                f"Expected scalar for {what} in '{fpath}', got type {type(x)}."
+            )
+        return x
+
+    def _load_one_row(row_idx: int) -> Dict[str, Any]:
+        if row_idx in cache:
+            return cache[row_idx]
+
+        fpath = _row_file_path(row_idx)
+        if not os.path.exists(fpath):
+            raise FileNotFoundError(
+                f"Missing mod_data row pickle: '{fpath}'. "
+                f"Expected one file per global row id with prefix '{mfname_pre}_'."
+            )
+
+        with open(fpath, "rb") as f:
+            row = pickle.load(f)
+
+        # Required keys for all cases
+        required = ('Imod', 'Vmod', 'Isc', 'Pmp', 'Imp', 'Vmp', 'Isc')
+        for k in required:
+            if k not in row:
+                raise KeyError(
+                    f"Row file '{fpath}' missing required key '{k}'.")
+
+        # Normalize curves
+        row['Imod'] = _to_1d(row['Imod'], 'Imod', fpath)
+        row['Vmod'] = _to_1d(row['Vmod'], 'Vmod', fpath)
+
+        # Normalize scalars
+        for sk in ('Isc', 'Pmp', 'Imp', 'Vmp', 'Isc'):
+            row[sk] = _to_scalar(row[sk], sk, fpath)
+
+        # Optional bypass info
+        if run_bpact:
+            if 'num_bpd_active' not in row or 'bypassed_mod' not in row:
+                raise KeyError(
+                    f"Row file '{fpath}' missing bypass keys 'num_bpd_active' and/or 'bypassed_mod' "
+                    f"required when run_bpact=True."
+                )
+            row['num_bpd_active'] = _to_scalar(
+                row['num_bpd_active'], 'num_bpd_active', fpath)
+
+            B = np.asarray(row['bypassed_mod'])
+            if strict_shapes and B.ndim < 1:
+                raise ValueError(
+                    f"bypassed_mod must be at least 1-D in '{fpath}', got shape {B.shape}."
+                )
+            row['bypassed_mod'] = B
+
+        cache[row_idx] = row
+        return row
+
+    # Parallel / sequential loading of unique rows
+    if num_workers and num_workers > 1 and unique_rows.size > 1:
+        with ThreadPoolExecutor(max_workers=num_workers) as ex:
+            futures = {ex.submit(_load_one_row, int(r)): int(r)
+                       for r in unique_rows}
+            for fut in as_completed(futures):
+                _ = fut.result()
     else:
-        Bypass_str_curves = np.array(Bypass_str_curves)
-    # If it is an annual simulation, delete the bypassed related variables
-    if run_annual:
-        del mod_data['Bypassed_substr']
+        for r in unique_rows:
+            _load_one_row(int(r))
 
-    # Store results in a dict
-    str_data = dict()
-    str_data['Istring'] = I_str_curves
-    str_data['Vstring'] = V_str_curves
-    str_data['Pstring'] = P_str_curves
-    str_data['Bypassed_substr'] = Bypass_str_curves
-    if run_cellcurr:
-        str_data['full_data'] = copy.deepcopy(full_data)
+    # ------------------------------
+    # 7) Assemble reduced arrays in mod_idxs_unique order
+    # ------------------------------
+    # Determine Npts and optional bypass shape from a sample row
+    sample = cache[int(unique_rows[0])]
+    Npts = int(sample['Imod'].shape[0])
 
-    return str_data
+    U = mod_idxs_unique.shape[0]
+    Imod_red = np.empty((U, Npts), dtype=sample['Imod'].dtype)
+    Vmod_red = np.empty((U, Npts), dtype=sample['Vmod'].dtype)
+    meanIsc_red = np.empty((U,), dtype=np.asarray(sample['Isc']).dtype)
+
+    Pmp_red = np.empty((U,), dtype=np.asarray(sample['Pmp']).dtype)
+    Imp_red = np.empty((U,), dtype=np.asarray(sample['Imp']).dtype)
+    Vmp_red = np.empty((U,), dtype=np.asarray(sample['Vmp']).dtype)
+    Isc_red = np.empty((U,), dtype=np.asarray(sample['Isc']).dtype)
+
+    if run_bpact:
+        B_shape = np.asarray(sample['bypassed_mod']).shape
+        if len(unique_rows) > 1 and strict_shapes:
+            for r in unique_rows[1:]:
+                if np.asarray(
+                        cache[int(r)]['bypassed_mod']).shape != B_shape:
+                    raise ValueError(
+                        f"Inconsistent bypassed_mod shapes across rows. "
+                        f"Row {int(unique_rows[0])}: {B_shape}, Row {int(r)}: "
+                        f"{np.asarray(cache[int(r)]['bypassed_mod']).shape}"
+                    )
+        BpDmp_red = np.empty((U,) + B_shape,
+                             dtype=np.asarray(sample['bypassed_mod']).dtype)
+        num_bpd_active_red = np.empty((U,),
+                                      dtype=np.asarray(sample['num_bpd_active']
+                                                       ).dtype)
+    else:
+        BpDmp_red = None
+        num_bpd_active_red = None
+
+    # Fill per unique row
+    for i, row_idx in enumerate(mod_idxs_unique):
+        r = int(row_idx)
+        row = cache[r]
+
+        if strict_shapes and row['Imod'].shape[0] != Npts:
+            raise ValueError(
+                f"Inconsistent Npts in row {r}: got {row['Imod'].shape[0]}, expected {Npts}."
+            )
+
+        Imod_red[i, :] = row['Imod']
+        Vmod_red[i, :] = row['Vmod']
+        meanIsc_red[i] = row['Isc']
+
+        Pmp_red[i] = row['Pmp']
+        Imp_red[i] = row['Imp']
+        Vmp_red[i] = row['Vmp']
+        Isc_red[i] = row['Isc']
+
+        if run_bpact:
+            BpDmp_red[i, ...] = row['bypassed_mod']
+            num_bpd_active_red[i] = row['num_bpd_active']
+
+    # ------------------------------
+    # 8) Expand back to full string order (S)
+    # ------------------------------
+    Imod = Imod_red[inverse, :]
+    Vmod = Vmod_red[inverse, :]
+    meanIsc = meanIsc_red[inverse]
+
+    Pmp = Pmp_red[inverse]
+    Imp = Imp_red[inverse]
+    Vmp = Vmp_red[inverse]
+    Isc = Isc_red[inverse]
+
+    if run_bpact:
+        BpDmp_exp = BpDmp_red[inverse, ...]
+        num_bpd_active_exp = num_bpd_active_red[inverse]
+    else:
+        BpDmp_exp = None
+        num_bpd_active_exp = None
+
+    # Also return counts and inverse for caller-side diagnostics or re-use
+    return (Imod, Vmod, meanIsc, Pmp, Imp, Vmp, Isc, num_bpd_active_exp,
+            BpDmp_exp, counts, inverse, Mod_idxs)
