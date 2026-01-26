@@ -143,18 +143,6 @@ def calcMod(Ee_mod, Icell, Vcell, VRBD, Voc, Isc, cell_pos, Vbypass,
         NPT_dict['Imod_negpts'].shape[1], 1)
     Npts = NPT_dict['Npts']
     sing_mod = {}
-    if ss_DBs:
-        ss_irr_db = ss_DBs[0]
-        ss_Id_pre_db = ss_DBs[1]
-        ss_Vd_pre_db = ss_DBs[2]
-        ss_cts_pre_db = ss_DBs[3]
-        ss_irr_ss_db = ss_DBs[4]
-        ss_Iss_db = ss_DBs[5]
-        ss_Vss_db = ss_DBs[6]
-        ss_cts_ss_db = ss_DBs[7]
-        last_index_df = ss_DBs[8]
-        last_index_ss_df = ss_DBs[9]
-        IV_res = ss_DBs[8]
     # iterate over substrings
     Isubstr, Vsubstr, Isc_substr, Imax_substr = [], [], [], []
     Isubstr_pre_bypass, Vsubstr_pre_bypass = [], []
@@ -235,68 +223,16 @@ def calcMod(Ee_mod, Icell, Vcell, VRBD, Voc, Isc, cell_pos, Vbypass,
                             "First row and last rows must be crosstied."
                         )
                     elif len(idxs) > 1:
-                        if ss_DBs:
-                            E_ss = Ee_mod[idxs]
-                            E_ss.sort()
-                            # If a database is used
-                            if len(ss_irr_ss_db) > 0:
-                                idx_row = find_row_index(ss_irr_ss_db, E_ss)
-                            else:
-                                idx_row = None
-                            if idx_row is not None:
-                                Icol = ss_Iss_db[idx_row, :].astype(float)
-                                Vcol = ss_Vss_db[idx_row, :].astype(float)
-                                use_DB = True
-                                if IV_trk_ct:
-                                    ss_ct = ss_cts_ss_db[idx_row] + 1
-                            else:
-                                use_DB = False
-                                if IV_trk_ct:
-                                    ss_ct = 1
-                            if IV_trk_ct:
-                                if len(ss_cts_ss_db) == 0:
-                                    ss_cts_ss_db = np.array([ss_ct])
-                                else:
-                                    if idx_row is not None:
-                                        ss_cts_ss_db[idx_row] = ss_ct
-                                    else:
-                                        ss_cts_ss_db = np.vstack(
-                                            [ss_cts_ss_db, ss_ct])
-                        else:
-                            use_DB = False
-                        if not use_DB:
-                            IatVrbd = np.asarray(
-                                [np.interp(vrbd, v, i) for vrbd, v, i in
-                                 zip(VRBD[idxs], Vcell[idxs],
-                                     Icell[idxs])]
-                            )
-                            Icol, Vcol = calcSeries(
-                                Icell[idxs], Vcell[idxs],
-                                Isc[idxs].mean(), IatVrbd.max(),
-                                Imod_pts, Imod_negpts, Npts
-                            )
-                            if ss_DBs:
-                                if len(ss_irr_ss_db) == 0:
-                                    ss_irr_ss_db = np.array([E_ss.tolist()])
-                                    ss_Iss_db = np.array([Icol.tolist()])
-                                    ss_Vss_db = np.array([Vcol.tolist()])
-                                else:
-                                    if ss_irr_ss_db.shape[1] < len(E_ss):
-                                        zeros_column = np.zeros(
-                                            (ss_irr_ss_db.shape[0],
-                                             len(E_ss) - ss_irr_ss_db.shape[1]
-                                             ))
-                                        ss_irr_ss_db = np.hstack((
-                                            ss_irr_ss_db, zeros_column))
-                                    elif ss_irr_ss_db.shape[1] > len(E_ss):
-                                        E_ss = np.pad(E_ss,
-                                                      (0,
-                                                       ss_irr_ss_db.shape[1] - len(E_ss)),
-                                                      'constant')
-                                    ss_irr_ss_db = np.vstack([ss_irr_ss_db,
-                                                              E_ss])
-                                    ss_Iss_db = np.vstack([ss_Iss_db, Icol])
-                                    ss_Vss_db = np.vstack([ss_Vss_db, Vcol])
+                        IatVrbd = np.asarray(
+                            [np.interp(vrbd, v, i) for vrbd, v, i in
+                             zip(VRBD[idxs], Vcell[idxs],
+                                 Icell[idxs])]
+                        )
+                        Icol, Vcol = calcSeries(
+                            Icell[idxs], Vcell[idxs],
+                            Isc[idxs].mean(), IatVrbd.max(),
+                            Imod_pts, Imod_negpts, Npts
+                        )
                     else:
                         Icol = Icell[idxs]
                         Vcol = Vcell[idxs]
