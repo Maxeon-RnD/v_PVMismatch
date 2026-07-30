@@ -4,7 +4,6 @@ __pycache__/
 *.pyc
 # Build outputs
 build/
-dist/
 *.egg-info/
 # Installer logs
 pip-wheel-metadata/
